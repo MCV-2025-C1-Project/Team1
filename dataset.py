@@ -1,5 +1,3 @@
-import time
-
 import os
 import glob
 
@@ -13,14 +11,25 @@ class Dataset:
     def __init__(self, path: str, color_space: readability.COLOR_SPACES='rgb'):
         self.color_space = color_space
         self.__load_dataset(path)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx: int):
+        return self.images[idx]
     
     def __load_dataset(self, data_path: str):
         """Load the query dataset."""
         self.images = []
+        self.histograms = []
         root_dir = os.path.abspath(os.path.expanduser(data_path))
         pattern = os.path.join(root_dir, '*.jpg')
         for image_path in glob.iglob(pattern, root_dir=root_dir):
-            self.images.append(self.__load_img(image_path))
+            image = self.__load_img(image_path)
+            histogram = self.__compute_histogram(image)
+
+            self.images.append(image)
+            self.histograms.append(histogram)
 
     def __load_img(self, img_path: str):
         """Loads an image."""
@@ -31,13 +40,16 @@ class Dataset:
         
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2_cvt_code)
-        return image 
+        return image
+    
+    def __compute_histogram(self, image: np.ndarray):
+        """Computes the histogram of a given image."""
+        H, W, C = image.shape
+        image_size = H * W
+        histogram = [cv2.calcHist(image, [i], None, [image_size], [0, 256]) for i in range(C)]
+        histogram = np.concat(histogram, axis=0)
+        return histogram
 
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, idx: int):
-        return self.images[idx]
 
 if __name__ == '__main__':
     rel_path = '../Datasets/qsd1_w1'

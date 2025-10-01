@@ -2,6 +2,7 @@ import os
 import glob
 
 import cv2
+import numpy as np
 
 import readability
 
@@ -12,18 +13,27 @@ class Database:
         
         self.__load_db(path)
     
+    def __len__(self):
+        return len(self.images)
+    
     def __load_db(self, db_path: str):
         """Loads the inner database."""
         self.images = []
         self.info = []
+        self.histograms = []
         root_dir = os.path.abspath(os.path.expanduser(db_path))
         pattern = os.path.join(root_dir, '*.jpg')
         for image_path in glob.iglob(pattern, root_dir=root_dir):
             jpg_file = image_path
             txt_file = os.path.splitext(image_path)[0] + '.txt'
 
-            self.images.append(self.__load_img(jpg_file))
-            self.info.append(self.__parse_txt(txt_file))
+            image = self.__load_img(jpg_file)
+            info = self.__parse_txt(txt_file)
+            histogram = self.__compute_histogram(image)
+
+            self.images.append(image)
+            self.info.append(info)
+            self.histograms(histogram)
 
     def __parse_txt(self, txt_path: str):
         """Parses a txt file."""
@@ -42,9 +52,14 @@ class Database:
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2_cvt_code)
         return image 
-    
-    def __len__(self):
-        return len(self.images)
+
+    def __compute_histogram(self, image: np.ndarray):
+        """Computes the histogram of a given image."""
+        H, W, C = image.shape
+        image_size = H * W
+        histogram = [cv2.calcHist(image, [i], None, [image_size], [0, 256]) for i in range(C)]
+        histogram = np.concat(histogram, axis=0)
+        return histogram
 
     def change_color_space(self, color_space: readability.COLOR_SPACES):
         """TODO"""
