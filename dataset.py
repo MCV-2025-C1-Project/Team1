@@ -16,7 +16,7 @@ class Dataset:
         return len(self.images)
 
     def __getitem__(self, idx: int):
-        return self.images[idx]
+        return self.images[idx], self.histograms[idx]
     
     def __load_dataset(self, data_path: str):
         """Load the query dataset."""
@@ -45,15 +45,17 @@ class Dataset:
     def __compute_histogram(self, image: np.ndarray):
         """Computes the histogram of a given image."""
         H, W, C = image.shape
-        image_size = H * W
-        histogram = [cv2.calcHist(image, [i], None, [image_size], [0, 256]) for i in range(C)]
+        histogram = [cv2.calcHist([image], [i], None, [256], [0, 256]) for i in range(C)]
         histogram = np.concat(histogram, axis=0)
         return histogram
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     rel_path = '../Datasets/qsd1_w1'
     db = Dataset(rel_path, color_space='rgb')
+    print(f"Accum hist: {np.sum(db[0][1][:256])}")
+    print(f"Image size: {db[0][0].shape[0] * db[0][0].shape[1]}")
     print(f'Dataset length: {len(db)}')
 
     abs_path = '/home/adriangt2001/MCVC/C1/Project/Datasets/qsd1_w1'

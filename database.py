@@ -56,8 +56,7 @@ class Database:
     def __compute_histogram(self, image: np.ndarray):
         """Computes the histogram of a given image."""
         H, W, C = image.shape
-        image_size = H * W
-        histogram = [cv2.calcHist(image, [i], None, [image_size], [0, 256]) for i in range(C)]
+        histogram = [cv2.calcHist([image], [i], None, [256], [0, 256]) for i in range(C)]
         histogram = np.concat(histogram, axis=0)
         return histogram
 
