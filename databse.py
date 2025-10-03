@@ -85,7 +85,7 @@ class Database:
                 self.info.append(info)
             except:
                 pass
-            histogram = self.__compute_histogram(image)
+            histogram = self.__compute_histogram(image, 32)
 
             self.images.append(image)
             self.histograms.append(histogram)
@@ -106,6 +106,8 @@ class Database:
             cv2_cvt_code = cv2.COLOR_BGR2HSV
         elif self.color_space == 'gray_scale':
             cv2_cvt_code = cv2.COLOR_BGR2GRAY
+        elif self.color_space == 'lab':
+            cv2_cvt_code = cv2.COLOR_BGR2Lab
         
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2_cvt_code)
@@ -116,7 +118,7 @@ class Database:
 
         if image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1):
             hist = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
-            cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+            cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
             """
             if self.debug:
                 save_histogram_jpg(hist, './db.jpg')
@@ -128,7 +130,7 @@ class Database:
             for i in range(image.shape[2])
         ]
         hist = np.concatenate(hists, axis=0)
-        cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
         """
         if self.debug:
             save_histogram_jpg(hist, './db.jpg')
@@ -158,7 +160,7 @@ class Database:
             save_histogram_jpg(k_hist, './db.jpg')
         return k_lowest_distance_idxs
     
-    def get_top_k_similar_images1( self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "rank"):
+    def get_top_k_similar_images1( self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
         """
         distance_metric: str OR list/tuple of str, e.g. "x2" or ["x2","l1","euclidean"]
         ensemble_method:
@@ -238,7 +240,7 @@ class Database:
 if __name__ == "__main__":
     #rel_path = r'c:\Users\maiol\Desktop\Master\C1\Projects\Project1\DATA'
     rel_path = r'C:\Users\maiol\Desktop\Master\C1\Projects\Project1\BBDD'
-    db = Database(rel_path, debug= False, color_space='hsv')
+    db = Database(rel_path, debug= False, color_space='lab')
     print(f'Database length: {len(db)}')
 
     pattern = os.path.join(r'C:\Users\maiol\Desktop\Master\C1\Projects\Project1\qsd1_w1', '*.jpg')
@@ -247,30 +249,29 @@ if __name__ == "__main__":
     results2 = []
     for image_path in glob.iglob(pattern, root_dir=root_dir):
         image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
 
         if image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1):
-                hist = cv2.calcHist([image], [0], None, [64], [0, 256]).ravel()
+                hist = cv2.calcHist([image], [0], None, [32], [0, 256]).ravel()
         else:
             hists = [
-                cv2.calcHist([image], [i], None, [64], [0, 256]).ravel()
+                cv2.calcHist([image], [i], None, [32], [0, 256]).ravel()
                 for i in range(image.shape[2])
             ]
             hist = np.concatenate(hists, axis=0)
-        cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
         #save_histogram_jpg(hist, './input.jpg')
         k_info = db.get_top_k_similar_images(hist, 'hist_intersection')
-        k_info2 = db.get_top_k_similar_images1(hist, ['l1','x2])
+        k_info2 = db.get_top_k_similar_images1(hist, ["l1"])
         results.append(k_info)
         results2.append(k_info2)
 
     with open(r"c:\Users\maiol\Desktop\Master\C1\Projects\Project1\qsd1_w1\gt_corresps.pkl", "rb") as f:   # 'rb' = read binary
         obj = pickle.load(f)
         
-    print(results)
     print(results2)
     print(obj)
 
-    matches = [i for i, (x, y) in enumerate(zip(results, obj)) if x == y]
+    matches = [i for i, (x, y) in enumerate(zip(results2, obj)) if x == y]
     count = len(matches)
     print(count, matches)
