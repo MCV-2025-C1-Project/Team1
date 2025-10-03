@@ -1,13 +1,13 @@
-import os
 import glob
+import os
+import pickle
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
-import readability
 import distances
-import pickle
-import matplotlib.pyplot as plt
+import readability
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -178,11 +178,9 @@ class Database:
                 elif m == 'euclidean':
                     d[idx] = distances.euclidean_distance(img_hist, h)
                 elif m == 'hist_intersection':
-                    sim = distances.hist_intersection(img_hist, h)
-                    d[idx] = 1.0 - sim
-                elif m == 'hellinger_kernel':
-                    sim = distances.hellinger_kernel(img_hist, h)
-                    d[idx] = np.sqrt(max(0.0, 1.0 - float(sim)))
+                    d[idx] = distances.hist_intersection(img_hist, h)
+                elif m == 'hellinger':
+                    d[idx] = distances.hellinger_kernel(img_hist, h)
                 else:
                     raise ValueError(f"Unknown metric: {m}")
             return d
@@ -262,18 +260,17 @@ if __name__ == "__main__":
         cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
         #save_histogram_jpg(hist, './input.jpg')
         k_info = db.get_top_k_similar_images(hist, 'hist_intersection')
-        k_info2 = db.get_top_k_similar_images1(hist, 'hist_intersection')
+        k_info2 = db.get_top_k_similar_images1(hist, ['l1','x2])
         results.append(k_info)
         results2.append(k_info2)
 
     with open(r"c:\Users\maiol\Desktop\Master\C1\Projects\Project1\qsd1_w1\gt_corresps.pkl", "rb") as f:   # 'rb' = read binary
         obj = pickle.load(f)
         
-
     print(results)
     print(results2)
     print(obj)
 
-    matches = [i for i, (x, y) in enumerate(zip(results, results2)) if x == y]
+    matches = [i for i, (x, y) in enumerate(zip(results, obj)) if x == y]
     count = len(matches)
     print(count, matches)
