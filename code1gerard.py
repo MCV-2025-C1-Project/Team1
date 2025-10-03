@@ -207,7 +207,7 @@ for (cs, m), pred_indices in results.items():
 
 """
 
-#HACER GRAFICAS EN FUNCION DE BITS
+#HACER GRAFICAS EN FUNCION DE BINS
 
 import matplotlib.pyplot as plt
 
