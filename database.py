@@ -108,6 +108,7 @@ class Database:
         self.bins = bins
         
         self.__load_db(path)
+        self.change_color(color_space)
     
     def __len__(self):
         """
@@ -170,7 +171,8 @@ class Database:
                 pass
             histogram = self.__compute_histogram(image)
 
-            self.images.append(image)
+            self.images_raw.append(image)
+            self.images.append(None)
             self.histograms.append(histogram)
             self.image_paths.append(jpg_file)
 
@@ -208,13 +210,6 @@ class Database:
             The loaded image in the requested color space.
         """
         image = cv2.imread(img_path)
-        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
-
-        if self.color_space == 'lab':
-            l, a, b = cv2.split(image)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            l_eq = clahe.apply(l)
-            image = cv2.merge((l_eq, a, b))
         
         return image 
 
@@ -257,7 +252,16 @@ class Database:
     def change_color(self, color_space):
         self.color_space = color_space
         for idx, image in enumerate(self.images_raw):
-            self.images[idx] = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
+            processed_image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
+
+            if self.color_space == 'lab':
+                l, a, b = cv2.split(processed_image)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                l_eq = clahe.apply(l)
+                processed_image = cv2.merge((l_eq, a, b))
+            
+            self.images[idx] = processed_image
+            self.histograms[idx] = self.__compute_histogram(processed_image)
     
     def get_top_k_similar_images(self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
         """

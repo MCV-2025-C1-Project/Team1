@@ -10,6 +10,7 @@ import yaml
 
 import metrics.average_precision as average_precision
 from database import Database
+import constants
 
 
 def parse_yaml(config):
@@ -101,21 +102,21 @@ def main():
     # Create Database object, this includes processing all images in database_path
     db = Database(database_path, bins = bins, debug = False, color_space=color_space)
 
+    # Store query images
     query_abs_path = os.path.abspath(os.path.expanduser(query_path))
     query_pattern = os.path.join(query_abs_path, '*.jpg')
 
-    cv2_cvt_codes = {
-        'gray_scale': cv2.COLOR_BGR2GRAY,
-        'rgb': cv2.COLOR_BGR2RGB,
-        'hsv': cv2.COLOR_BGR2HSV,
-        'lab': cv2.COLOR_BGR2Lab
-    }
-
-    results = [[] for _ in k_list]
+    query_images_raw = []
 
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2_cvt_codes[color_space])
+        
+        query_images_raw.append(image)
+    
+    results = [[] for _ in k_list]
+
+    for image in query_images_raw:
+        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[color_space])
 
         # Preprocess image if required
         if color_space == 'lab':
@@ -123,7 +124,8 @@ def main():
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             l_eq = clahe.apply(l)
             image = cv2.merge((l_eq, a, b))
-
+        
+        # Histogram
         if image.ndim == 2:
             hist = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
         else:
