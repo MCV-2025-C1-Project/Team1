@@ -25,13 +25,23 @@ pip install -r requirements.txt
 
 And you are good to go!
 
-Then to run the program you can just run it like this:
+## Usage
+
+To run the program, you have two options.
+
+The first one and more straightforward is to use one of the provided .yaml files inside the ```configs/``` folder. But before that remember to change the path to your database and query set in the .yaml files. Then you can run the program like this:
 
 ```bash
-python main.py --database <path/to/the/database/folder> --images <path/to/the/query/set/folder>
+python main.py --config configs/test1.yaml
 ```
 
-There are more options to play with the color spaces in case you want to try it out. To get more information about what each arguent does run:
+The second one is fine to run the program just once, but if you want to rerun a configuration we don't recommend using this. Instead of specifying a .yaml file, you should add the arguments when running the script like so:
+
+```bash
+python main.py --database_path <path/to/your/database> --query_path <path/to/your/query/set> --k 1
+```
+
+There are more options to play with the color spaces and distances used in case you want to try it out. To get more information about what each argument does run:
 ```bash
 python main.py --help
 ```
