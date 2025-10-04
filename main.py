@@ -32,7 +32,7 @@ def parse_args():
                                  --query_path ./data/queries \\
                                  --metrics hist_intersection \\
                                  --color_space lab \\
-                                 --bins 64 64 64 \\
+                                 --bins 64 \\
                                  --val True \\
 
             Notes:
