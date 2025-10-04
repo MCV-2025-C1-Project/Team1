@@ -1,0 +1,12 @@
+data:
+  database_path: ../Datasets/BBDD/
+  query_path: ../Datasets/qsd1_w1/
+
+retrieval:
+  k: [1, 5]
+  metrics: [canberra]
+  color_space: 'lab'
+  bins: 128
+
+evaluation:
+  val: true

@@ -158,7 +158,7 @@ class Database:
         self.histograms = []
         root_dir = os.path.abspath(os.path.expanduser(db_path))
         pattern = os.path.join(root_dir, '*.jpg')
-        for image_path in glob.iglob(pattern, root_dir=root_dir):
+        for image_path in sorted(glob.glob(pattern, root_dir=root_dir)):
             jpg_file = image_path
             image = self.__load_img(jpg_file)
             try:

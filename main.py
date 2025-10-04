@@ -6,10 +6,24 @@ import textwrap
 
 import cv2
 import numpy as np
+import yaml
 
 import metrics.average_precision as average_precision
-from databse import Database
+from database import Database
 
+
+def parse_yaml(config):
+    if not config: return None
+
+    yaml_args = {}
+    with open(config, 'r') as f:
+        contents: dict = yaml.safe_load(f)
+        for _, params in contents.items():
+            if params:
+                for key, value in params.items():
+                    yaml_args[key] = value
+    
+    return yaml_args
 
 def parse_args():
     """
@@ -44,11 +58,14 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument('--k', nargs='+', type=int, required=True,
+    parser.add_argument('--config', type=str,
+                        help='Config .yaml to have a preset of arguments.')
+
+    parser.add_argument('--k', nargs='+', type=int,
                         help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
-    parser.add_argument('--database_path', type=str, required=True,
+    parser.add_argument('--database_path', type=str,
                         help='Path to the database directory (Images ).')
-    parser.add_argument('--query_path', type=str, required=True,
+    parser.add_argument('--query_path', type=str,
                         help='Path to the query image directory (can include wildcards).')
     parser.add_argument('--metrics', nargs='+', type=str, default=['hist_intersection'],
                         help='List of similarity metrics to use (default: hist_intersection).')
@@ -59,15 +76,19 @@ def parse_args():
     parser.add_argument('--val', type=bool, default=False,
                         help='Boolean to determine whether to do validation')
 
+    tmp_args = parser.parse_args()
+
+    yaml_args = parse_yaml(tmp_args.config)
+
+    if yaml_args:
+        parser.set_defaults(**yaml_args)
+
     args = parser.parse_args()
 
     return args
 
 def main():
-
     args = parse_args()
-
-    k_list = args.k
 
     k_list = args.k
     database_path = args.database_path
@@ -78,69 +99,57 @@ def main():
     bins = args.bins
 
     # Create Database object, this includes processing all images in database_path
-    db = Database(database_path, bins = bins, debug = False, color_space='lab')
+    db = Database(database_path, bins = bins, debug = False, color_space=color_space)
 
-    root_dir = os.path.abspath(os.path.expanduser(database_path))
+    query_abs_path = os.path.abspath(os.path.expanduser(query_path))
+    query_pattern = os.path.join(query_abs_path, '*.jpg')
+
+    cv2_cvt_codes = {
+        'gray_scale': cv2.COLOR_BGR2GRAY,
+        'rgb': cv2.COLOR_BGR2RGB,
+        'hsv': cv2.COLOR_BGR2HSV,
+        'lab': cv2.COLOR_BGR2Lab
+    }
 
     results = [[] for _ in k_list]
 
-    for image_path in glob.iglob(query_path, root_dir=root_dir):
-
-        #Process query image
+    for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2_cvt_codes[color_space])
 
-        if color_space == 'rgb':
-            cv2_cvt_code = cv2.COLOR_BGR2RGB           
-            image = cv2.cvtColor(image, cv2_cvt_code)
-
-        elif color_space == 'hsv':
-            cv2_cvt_code = cv2.COLOR_BGR2HSV      
-            image = cv2.cvtColor(image, cv2_cvt_code)
-
-        elif color_space == 'gray_scale':
-            cv2_cvt_code = cv2.COLOR_BGR2GRAY
-            image = cv2.cvtColor(image, cv2_cvt_code)
-
-        elif color_space == 'lab':
-            cv2_cvt_code = cv2.COLOR_BGR2Lab
-            image = cv2.cvtColor(image, cv2_cvt_code)
+        # Preprocess image if required
+        if color_space == 'lab':
             l, a, b = cv2.split(image)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             l_eq = clahe.apply(l)
             image = cv2.merge((l_eq, a, b))
 
-        #Calc histograms for gray_scale
-        if image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1):
-                hist = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
-        #Calc histograms for 3 channel images
+        if image.ndim == 2:
+            hist = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
         else:
-            hists = [
-                cv2.calcHist([image], [i], None, [bins], [0, 256]).ravel()
-                for i in range(image.shape[2])
-            ]
+            H, W, C = image.shape
+            hists = [cv2.calcHist([image], [i], None, [bins], [0, 256]).ravel() for i in range(C)]
             hist = np.concatenate(hists, axis=0)
         cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
 
-        #Compute distances given k
+        # Compute distances given k
         for i, k in enumerate(k_list):
-             
             k_info = db.get_top_k_similar_images(hist, metrics, k = k)
             results[i].append(k_info)
 
     # Compute MAP@k given a gt
     if val:
-        directory = os.path.dirname(query_path)
-        pickle_gt = os.path.join(directory, r'gt_corresps.pkl')
+        pickle_gt = os.path.join(query_path, 'gt_corresps.pkl')
         with open(pickle_gt, "rb") as f:
             obj = pickle.load(f)
 
         for result, k in zip(results, k_list):
             map1 = average_precision.mapk(obj, result, k = k)
-        
             print(f"MAP@{k}: {map1:.4f}")
 
     for result, k in zip(results, k_list):
-        print(f'\nFor k = {k}, the most similar images from the dataset to de queries are:\n')
+        print(f'\nFor k = {k}, the most similar images from the dataset to the queries are:\n')
         print(result)
+
 if __name__ == "__main__":
     main()
