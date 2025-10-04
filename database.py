@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import metrics.distances as distances
-import readability
+import constants
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -102,7 +102,7 @@ class Database:
     histograms : list of numpy.ndarray
         L1-normalized histograms (concatenated per-channel for color images).
     """
-    def __init__(self, path: str, bins: int, debug: bool=False, color_space: readability.COLOR_SPACES='rgb'):
+    def __init__(self, path: str, bins: int, debug: bool=False, color_space: constants.COLOR_SPACES='rgb'):
         self.color_space = color_space
         self.debug = debug
         self.bins = bins
@@ -153,6 +153,7 @@ class Database:
             Path to the root directory containing ``*.jpg`` images.
         """
         self.image_paths = []
+        self.images_raw = []
         self.images = []
         self.info = []
         self.histograms = []
@@ -207,25 +208,14 @@ class Database:
             The loaded image in the requested color space.
         """
         image = cv2.imread(img_path)
-        if self.color_space == 'rgb':
-            cv2_cvt_code = cv2.COLOR_BGR2RGB
+        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
 
-        elif self.color_space == 'hsv':
-            cv2_cvt_code = cv2.COLOR_BGR2HSV
-
-        elif self.color_space == 'gray_scale':
-            cv2_cvt_code = cv2.COLOR_BGR2GRAY
-
-        elif self.color_space == 'lab':
-            cv2_cvt_code = cv2.COLOR_BGR2Lab
-            image = cv2.cvtColor(image, cv2_cvt_code)
+        if self.color_space == 'lab':
             l, a, b = cv2.split(image)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             l_eq = clahe.apply(l)
             image = cv2.merge((l_eq, a, b))
-            return image
         
-        image = cv2.cvtColor(image, cv2_cvt_code)
         return image 
 
     def __compute_histogram(self, image: np.ndarray):
@@ -264,7 +254,12 @@ class Database:
         cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
         return hist
     
-    def get_top_k_similar_images( self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
+    def change_color(self, color_space):
+        self.color_space = color_space
+        for idx, image in enumerate(self.images_raw):
+            self.images[idx] = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
+    
+    def get_top_k_similar_images(self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
         """
         Retrieve indices of the top-k most similar database images to a query histogram.
 

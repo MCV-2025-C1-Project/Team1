@@ -69,7 +69,7 @@ def parse_args():
                         help='Path to the query image directory (can include wildcards).')
     parser.add_argument('--metrics', nargs='+', type=str, default=['hist_intersection'],
                         help='List of similarity metrics to use (default: hist_intersection).')
-    parser.add_argument('--color_space', type=str, default='lab',
+    parser.add_argument('--color_space', nargs='+', type=str, default='lab',
                         help='Name of the color space: rgb, hsv, gray_scale, lab')
     parser.add_argument('--bins', type=int, default=64,
                         help='Number of bins for the histogram per channel')
