@@ -241,222 +241,127 @@ class Database:
         for idx, image in enumerate(self.images):
             self.images[idx] = cv2.cvtColor(image, cv2_cvt_code)
 
-import csv
-
 if __name__ == "__main__":
-    # -------- Paths --------
+
+    # paths
     rel_path_db = r'C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\BBDD'
     query_glob  = os.path.join(r'C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\qsd1_w1', '*.jpg')
     gt_path     = r"C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\qsd1_w1\gt_corresps.pkl"
-    csv_path    = "TESTS_v2.csv"
- 
-    # -------- Grid to search --------:)
-    HIST_GRID = {
-        # === Grayscale configs ===
-        "gray16": ("gray_scale", 16),
-        "gray30": ("gray_scale", 30),
-        "gray64": ("gray_scale", 64),
-        "gray128": ("gray_scale", 128),
-        "gray256": ("gray_scale", 256),
 
-        # === RGB configs (concatenate x xh histograms) ===
-        "rgb16x3": ("rgb", (16, 16, 16)),
-        "rgb30x3": ("rgb", (30, 30, 30)),
-        "rgb64x3": ("rgb", (64, 64, 64)),
-        "rgb128x3": ("rgb", (128, 128, 128)),
+    # funcions utilitzades
+    def convert_color_to_lab(img_bgr):
+        return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2Lab)
 
-        # === HSV configs ===
-        "hsv_50_30_30": ("hsv", (50, 30, 30)), 
-        "hsv_60_20_20": ("hsv", (60, 20, 20)),   
-        "hsv_20_60_20": ("hsv", (20, 60, 20)), 
-        "hsv_32x3": ("hsv", (32, 32, 32)),      
-        "hsv_90_15_15": ("hsv", (90, 15, 15)),   
-        "hsv_72_18_18": ("hsv", (72, 18, 18)),   
-        "hsv_45_22_22": ("hsv", (45, 22, 22)),  
+    def clahe_on_lab(img_lab, clip=2.0, tile=(8, 8)):
+        """Apply CLAHE on L channel; keep a/b unchanged.""" 
+        L, a, b = cv2.split(img_lab)
+        clahe = cv2.createCLAHE(clipLimit=float(clip), tileGridSize=tuple(tile))
+        L2 = clahe.apply(L)
+        return cv2.merge([L2, a, b])
 
-        # === Lab configs ===
-        "lab_30x3": ("lab", (30, 30, 30)),
-        "lab_64x3": ("lab", (64, 64, 64)),
-        "lab_16x3": ("lab", (16, 16, 16)),      
-        "lab_128x3": ("lab", (128, 128, 128)),  
-    }
-
-    SIM_METHODS = [
-        "l1",
-        "x2",
-        "euclidean",
-        "hist_intersection",   
-        "hellinger_kernel",    
-        "cosine",
-        "chebyshev",
-        "canberra",
-        "braycurtis",
-        "bhattacharyya",      
-        "js_divergence"       
-    ]
-
-
-    def compute_hist_1d(image, bins_cfg):
+    def compute_hist_1d_color(image, ch_bins):
         """
-        image: np.ndarray in the *desired* color space already.
-        bins_cfg: int or tuple/list of 3 ints (per-channel).
-        Returns 1D normalized histogram.
+        image: 3-channel array (Lab here).
+        ch_bins: tuple/list of 3 ints, one per channel.
+        returns normalized 1D histogram (concatenated).
         """
-        if image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1): 
-            # grayscale
-            bins = bins_cfg if isinstance(bins_cfg, int) else int(bins_cfg)
-            h = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
-            cv2.normalize(h, h, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-            return h
-        
-        else:
-            # color
-            if isinstance(bins_cfg, (list, tuple)):
-                ch_bins = list(bins_cfg)
-                if len(ch_bins) != image.shape[2]:
-                    raise ValueError("bins_cfg must match number of channels.")
-            else:
-                ch_bins = [int(bins_cfg)] * image.shape[2]
-
-            parts = []
-
-            for i, b in enumerate(ch_bins):
-                hi = cv2.calcHist([image], [i], None, [b], [0, 256]).ravel()
-                parts.append(hi)
-            h = np.concatenate(parts, axis=0)
-            cv2.normalize(h, h, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-            return h
-
-    def convert_color(img_bgr, target_space):
-
-        if target_space == "rgb":
-            return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        elif target_space == "hsv":
-            return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        elif target_space == "gray_scale":
-            return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        elif target_space == "lab":
-            return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2Lab)
-        else:
-            raise ValueError("Unknown color space")
+        parts = []
+        for i, b in enumerate(ch_bins):
+            hi = cv2.calcHist([image], [i], None, [int(b)], [0, 256]).ravel()
+            parts.append(hi)
+        h = np.concatenate(parts, axis=0)
+        cv2.normalize(h, h, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        return h
 
     def _normalize_prob(h):
         h = np.asarray(h, dtype=np.float64).ravel()
-        h = np.clip(h, 0.0, None)               
+        h = np.clip(h, 0.0, None)
         s = h.sum()
         if s <= 0:
-            return np.zeros_like(h)          
+            return np.zeros_like(h)
         return h / s
 
-    def distances_vector(query_hist, db_hists, method):
+    def distances_vector_minimal(query_hist, db_hists, method):
         """
-        Returns a vector of distances (lower is better) between query_hist and each H in db_hists.
-        Uses dist.<metric> (or distances.<metric> as a fallback).
-        Probability-based metrics get L1-normalized inputs first.
+        Only the two used methods:
+          - 'hist_intersection' (on L1-normalized hists)
+          - 'canberra'
         """
-        D = distances # import distances as D !! Vigilar aqui
-            
+        D = distances  # your provided distances module
+
         q = np.asarray(query_hist, dtype=np.float64).ravel()
         d = np.empty(len(db_hists), dtype=np.float64)
 
-        prob_methods = {"hist_intersection", "hellinger_kernel", "bhattacharyya", "js_divergence"}
-        use_prob = method in prob_methods # set of prob-based metrics
-        if use_prob:
+        if method == "hist_intersection":
             qn = _normalize_prob(q)
-
-        for i, H in enumerate(db_hists):
-            H = np.asarray(H, dtype=np.float64).ravel()
-
-            if method == 'l1':
-                d[i] = D.l1_distance(q, H)
-
-            elif method == 'x2':
-                d[i] = D.x2_distance(q, H)
-
-            elif method == 'euclidean':
-                d[i] = D.euclidean_distance(q, H)
-
-            elif method == 'hist_intersection':
+            for i, H in enumerate(db_hists):
                 Hn = _normalize_prob(H)
                 d[i] = D.hist_intersection(qn, Hn)
+            return d
 
-            elif method == 'hellinger_kernel':
-                Hn = _normalize_prob(H)
-                d[i] = D.hellinger_kernel(qn, Hn)
-
-            elif method == 'cosine':
-                d[i] = D.cosine_distance(q, H)
-
-            elif method == 'chebyshev':
-                d[i] = D.chebyshev_distance(q, H)
-
-            elif method == 'canberra':
+        if method == "canberra":
+            for i, H in enumerate(db_hists):
                 d[i] = D.canberra_distance(q, H)
+            return d
 
-            elif method == 'braycurtis':
-                d[i] = D.braycurtis_distance(q, H)
-
-            elif method == 'bhattacharyya':
-                Hn = _normalize_prob(H)
-                d[i] = D.bhattacharyya_distance(qn, Hn)
-
-            elif method == 'js_divergence':
-                Hn = _normalize_prob(H)
-                d[i] = D.js_divergence(qn, Hn) 
-
-            else:
-                raise ValueError(f"Unknown similarity method: {method}")
-
-        return d
-
+        raise ValueError(f"Unsupported method here: {method}")
 
     def topk_indices(d, k):
         return sorted(range(len(d)), key=lambda i: (d[i], i))[:k]
-
-    # save results to csv
-    header = ["Histogram_Method", "Similarity_Method", "MAP@1", "MAP@5"]
-    file_exists = os.path.exists(csv_path)
-    if not file_exists or os.path.getsize(csv_path) == 0:
-        with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow(header)
 
     # gt
     with open(gt_path, "rb") as f:
         gt = pickle.load(f)
 
-    # run grid search
-    for hist_name, (db_space, bins_cfg) in HIST_GRID.items():
+    # setups dels millors
+    SETUPS = [
+        # top MAP@1
+        {
+            "name": "lab_40x3 + clahe + hist_intersection",
+            "bins": (40, 40, 40),
+            "sim": "hist_intersection",
+        },
+        # top MAP@5
+        {
+            "name": "lab_128x3 + clahe + canberra",
+            "bins": (128, 128, 128),
+            "sim": "canberra",
+        },
+    ]
 
-        db = Database(rel_path_db, debug=False, color_space=db_space)
-        print(f'\n[{hist_name}] Database length: {len(db)} | color_space={db_space}')
+    for setup in SETUPS:
+        bins_cfg = setup["bins"]
+        sim_method = setup["sim"]
 
+        # DB in Lab, apply CLAHE, compute histograms
+        db = Database(rel_path_db, debug=False, color_space="lab")
         db_hists = []
-        for img in db.images:
-            db_hists.append(compute_hist_1d(img, bins_cfg))
+        for img_lab in db.images:
+            img_lab_p = clahe_on_lab(img_lab, clip=2.0, tile=(8, 8))
+            db_hists.append(compute_hist_1d_color(img_lab_p, bins_cfg))
         db_hists = np.asarray(db_hists, dtype=object)
 
+        # query histograms in Lab with CLAHE
         query_hists = []
-        for qpath in glob.iglob(query_glob, root_dir=os.path.abspath(os.path.expanduser(rel_path_db))):
+        for qpath in glob.glob(query_glob):
             qbgr = cv2.imread(qpath)
-            qimg = convert_color(qbgr, db_space)
-            qhist = compute_hist_1d(qimg, bins_cfg)
+            qlab = convert_color_to_lab(qbgr)
+            qlab_p = clahe_on_lab(qlab, clip=2.0, tile=(8, 8))
+            qhist = compute_hist_1d_color(qlab_p, bins_cfg)
             query_hists.append(qhist)
 
         assert len(query_hists) == len(gt), "Mismatch between queries and GT length."
 
-        # evaluate the different similarity methodss
-        for sim_method in SIM_METHODS:
-            preds_k1, preds_k5 = [], []
+        # evaluar els millors metodes  
+        preds_k1, preds_k5 = [], []
+        for qh in query_hists:
+            dvec = distances_vector_minimal(qh, db_hists, sim_method)
+            preds_k1.append(topk_indices(dvec, 1))
+            preds_k5.append(topk_indices(dvec, 5))
 
-            for qh in query_hists:
-                dvec = distances_vector(qh, db_hists, sim_method)
-                preds_k1.append(topk_indices(dvec, 1))
-                preds_k5.append(topk_indices(dvec, 5))
+        map1 = mapk(gt, preds_k1, k=1)
+        map5 = mapk(gt, preds_k5, k=5)
 
-            map1 = mapk(gt, preds_k1, k=1)
-            map5 = mapk(gt, preds_k5, k=5)
-
-            print(f"{hist_name:>14} | {sim_method:>18} -> MAP@1: {map1:.4f} | MAP@5: {map5:.4f}")
-
-            with open(csv_path, mode="a", newline="", encoding="utf-8") as f:
-                csv.writer(f).writerow([hist_name, sim_method, f"{map1:.4f}", f"{map5:.4f}"])
+        print(f"\n=== {setup['name']} ===")
+        print(f"MAP@1: {map1:.4f}")
+        print(f"MAP@5: {map5:.4f}")
