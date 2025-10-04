@@ -6,11 +6,12 @@ import textwrap
 
 import cv2
 import numpy as np
+import pandas as pd
 import yaml
 
+import constants
 import metrics.average_precision as average_precision
 from database import Database
-import constants
 
 
 def parse_yaml(config):
@@ -62,18 +63,18 @@ def parse_args():
     parser.add_argument('--config', type=str,
                         help='Config .yaml to have a preset of arguments.')
 
-    parser.add_argument('--k', nargs='+', type=int,
-                        help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
     parser.add_argument('--database_path', type=str,
                         help='Path to the database directory (Images ).')
     parser.add_argument('--query_path', type=str,
-                        help='Path to the query image directory (can include wildcards).')
-    parser.add_argument('--metrics', nargs='+', type=str, default=['hist_intersection'],
-                        help='List of similarity metrics to use (default: hist_intersection).')
+                        help='Path to the query image directory.')
+    parser.add_argument('--k', nargs='+', type=int,
+                        help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
     parser.add_argument('--color_space', nargs='+', type=str, default='lab',
                         help='Name of the color space: rgb, hsv, gray_scale, lab')
-    parser.add_argument('--bins', type=int, default=64,
+    parser.add_argument('--bins', type=int, nargs='+', default=64,
                         help='Number of bins for the histogram per channel')
+    parser.add_argument('--distances', nargs='+', type=str, default=['hist_intersection'],
+                        help='List of similarity metrics to use (default: hist_intersection).')
     parser.add_argument('--val', type=bool, default=False,
                         help='Boolean to determine whether to do validation')
 
@@ -91,67 +92,93 @@ def parse_args():
 def main():
     args = parse_args()
 
-    k_list = args.k
+    # Load arguments into variables
     database_path = args.database_path
     query_path = args.query_path
-    metrics = args.metrics
+    color_spaces = args.color_space if isinstance(args.color_space, list) else [args.color_space]
+    bins = args.bins if isinstance(args.bins, list) else [args.bins]
+    distances = args.distances
+    k_list = args.k
     val = args.val
-    color_space = args.color_space
-    bins = args.bins
 
-    # Create Database object, this includes processing all images in database_path
-    db = Database(database_path, bins = bins, debug = False, color_space=color_space)
+    # Prepare data structures and load groundtruth for grid search in case of validation
+    if val:
+        best_config = [[] for _ in range(len(k_list))]
+        best_result = [[] for _ in range(len(k_list))]
+        best_mapk = [0 for _ in range(len(k_list))]
+        grid_search_df = pd.DataFrame(columns=['color_space', 'bins', 'distances', *[f'mapk{k}' for k in k_list]])
+        
+        with open(os.path.join(query_path, 'gt_corresps.pkl'), 'rb') as f:
+            groundtruth = pickle.load(f)
+    
+    # Load data
+    db = Database(database_path, bins=bins[0], color_space=color_spaces[0])
 
-    # Store query images
     query_abs_path = os.path.abspath(os.path.expanduser(query_path))
     query_pattern = os.path.join(query_abs_path, '*.jpg')
-
-    query_images_raw = []
+    query_images = []
 
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         image = cv2.imread(image_path)
-        
-        query_images_raw.append(image)
+        query_images.append(image)
     
-    results = [[] for _ in k_list]
+    # Loop through all arguments (GridSearch)
+    for cs in color_spaces:
+        db.change_color(cs)
+        for single_bin in bins:
+            db.change_bins(single_bin)
+            for dist in distances:
+                results = [[] for _ in k_list]
+                for image in query_images:
+                    image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
 
-    for image in query_images_raw:
-        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[color_space])
+                    if cs == 'lab_processed':
+                        l, a, b = cv2.split(image)
+                        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                        l_eq = clahe.apply(l)
+                        image = cv2.merge((l_eq, a, b))
 
-        # Preprocess image if required
-        if color_space == 'lab':
-            l, a, b = cv2.split(image)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            l_eq = clahe.apply(l)
-            image = cv2.merge((l_eq, a, b))
+                    # Compute query histogram (image descriptor)
+                    if image.ndim == 2:
+                        hist = cv2.calcHist([image], [0], None, [single_bin], [0, 256]).ravel()
+                    else:
+                        H, W, C = image.shape
+                        hists = [cv2.calcHist([image], [i], None, [single_bin], [0, 256]).ravel() for i in range(C)]
+                        hist = np.concatenate(hists, axis=0)
+                    cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+
+                    for i, k in enumerate(k_list):
+                        k_info = db.get_top_k_similar_images(hist, dist, k = k)
+                        results[i].append(k_info)
+                
+                if val:
+                    mapk_list = []
+                    for idx, (result, k) in enumerate(zip(results, k_list)):
+                        mapk = average_precision.mapk(groundtruth, result, k = k)
+                        mapk_list.append(mapk)
+                        print(f"MAP@{k}: {mapk:.4f}")
+
+                        if mapk > best_mapk[idx]:
+                            best_config[idx] = [cs, single_bin, dist]
+                            best_result[idx] = result
+                            best_mapk[idx] = mapk
+
+                grid_search_df.loc[len(grid_search_df)] = [cs, single_bin, dist, *mapk_list]
+                for result, k in zip(results, k_list):
+                    print(f"\nFor k = {k}, the most similar images from the dataset to the queries are:\n")
+                    print(result)
         
-        # Histogram
-        if image.ndim == 2:
-            hist = cv2.calcHist([image], [0], None, [bins], [0, 256]).ravel()
-        else:
-            H, W, C = image.shape
-            hists = [cv2.calcHist([image], [i], None, [bins], [0, 256]).ravel() for i in range(C)]
-            hist = np.concatenate(hists, axis=0)
-        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
-
-        # Compute distances given k
-        for i, k in enumerate(k_list):
-            k_info = db.get_top_k_similar_images(hist, metrics, k = k)
-            results[i].append(k_info)
-
-    # Compute MAP@k given a gt
     if val:
-        pickle_gt = os.path.join(query_path, 'gt_corresps.pkl')
-        with open(pickle_gt, "rb") as f:
-            obj = pickle.load(f)
+        grid_search_df.to_csv('grid_search_results.csv')
+        for config, results, mapk, k in zip(best_config, best_result, best_mapk, k_list):
+            print(f"\nFor K = {k}\n")
+            print(f"Best results: {results}")
+            print(f"Best config: {config}")
+            print(f"Best mapk: {mapk:.4f}")
 
-        for result, k in zip(results, k_list):
-            map1 = average_precision.mapk(obj, result, k = k)
-            print(f"MAP@{k}: {map1:.4f}")
-
-    for result, k in zip(results, k_list):
-        print(f'\nFor k = {k}, the most similar images from the dataset to the queries are:\n')
-        print(result)
+                
 
 if __name__ == "__main__":
     main()
+                    
+

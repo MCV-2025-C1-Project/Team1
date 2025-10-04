@@ -254,7 +254,7 @@ class Database:
         for idx, image in enumerate(self.images_raw):
             processed_image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
 
-            if self.color_space == 'lab':
+            if self.color_space == 'lab_processed':
                 l, a, b = cv2.split(processed_image)
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 l_eq = clahe.apply(l)
@@ -263,6 +263,11 @@ class Database:
             self.images[idx] = processed_image
             self.histograms[idx] = self.__compute_histogram(processed_image)
     
+    def change_bins(self, bins):
+        self.bins = bins
+        for idx, image in enumerate(self.images):
+            self.histograms[idx] = self.__compute_histogram(image)
+
     def get_top_k_similar_images(self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
         """
         Retrieve indices of the top-k most similar database images to a query histogram.
