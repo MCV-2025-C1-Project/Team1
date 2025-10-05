@@ -12,16 +12,30 @@ This project has been developed using Python 3.13.7, but any Python version abov
 To clone this repo you can do:
 
 ```bash
-git clone https://github.com/MCV-2025-C1-Project/Team1.git
+git clone https://github.com/MCV-2025-C1-Project/Team1.git && cd Team1
+```
+
+We recommend installing the required libraries inside a virtual environment:
+
+Create and activate the virtual environment:
+
+Windows (PowerShell):
+```bash
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
+Linux or macOS:
+```bash
+python -m venv venv
+source venv/bin/activate
 ```
 
 
-To install the used libraries run the following command:
-
+Install dependencies:
 ```bash
-cd Team1
 pip install -r requirements.txt
 ```
+
 
 And you are good to go!
 
@@ -32,7 +46,7 @@ To run the program, you have two options.
 The first one and more straightforward is to use one of the provided .yaml files inside the ```configs/``` folder. But before that remember to change the path to your database and query set in the .yaml files. Then you can run the program like this:
 
 ```bash
-python main.py --config configs/test1.yaml
+python main.py --config configs/test.yaml
 ```
 
 The second one is fine to run the program just once, but if you want to rerun a configuration we don't recommend using this. Instead of specifying a .yaml file, you should add the arguments when running the script like so:
@@ -47,13 +61,8 @@ python main.py --help
 ```
 
 ## Week 1
-### Development
-In this first week we were asked to create an image descriptor and play with different options to choose the one that works best with the model. For that we used the 1D histograms concatenated, as suggested by our teachers, and tried different color spaces to choose the one that fits best.
 
-We also tried different distances to see which are the best ones. But we aren't limited to use just one distance for the final chosen distance, so we decided to try the N best metrics as an ensemble of distances!
-
-### Results
-
+During the first week, our objective was to design an image descriptor and explore different configurations to determine the most effective approach for the painting similarity matching task. Following our instructors’ guidelines, we built descriptors based on concatenated 1D color histograms and evaluated multiple color spaces, numbers of bins, distance metrics, and preprocessing strategies. To ensure a fair and comprehensive comparison, we conducted a grid search over all these parameters to identify the configuration that delivered the most reliable and discriminative results.
 
 ## Team Members
 This is the awesome team who collaborated in this project:
