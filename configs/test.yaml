@@ -1,13 +1,16 @@
 data:
   database_path: ../BBDD/
-  query_path: ../qsd1_w1/
+  query_path: ../qst1_w1/
 
 retrieval:
   color_space: [lab]
   bins: [100]
   distances: [canberra]
-  preprocessings: [clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp]
-  k: [1, 5]
+  preprocessings: [clahe]
+  k: [10]
 
 evaluation:
-  val: true
+  val: false
+
+output:
+  pickle_filename: 'result.pkl'
