@@ -62,24 +62,27 @@ def parse_args():
     )
 
     parser.add_argument('--config', type=str,
-                        help='Config .yaml to have a preset of arguments.')
-
+                        help='Path to a YAML config file (loads presets).')
     parser.add_argument('--database_path', type=str,
-                        help='Path to the database directory (Images ).')
+                        help='Path to the database directory (images).')
     parser.add_argument('--query_path', type=str,
                         help='Path to the query image directory.')
     parser.add_argument('--k', nargs='+', type=int,
                         help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
     parser.add_argument('--color_space', nargs='+', type=str, default=['lab'],
-                        help='Name of the color space: rgb, hsv, gray_scale, lab')
+                        help='Color space(s) to use. Options: gray_scale, rgb, hsv, lab, ycbcr. (Default: [lab])')
     parser.add_argument('--bins', type=int, nargs='+', default=[64],
-                        help='Number of bins for the histogram per channel')
+                        help='Number of histogram bins per channel. (Default: [64])')
     parser.add_argument('--distances', nargs='+', type=str, default=['hist_intersection'],
-                        help='List of similarity metrics to use (default: hist_intersection).')
+                        help='Distance / similarity metrics. Options: euclidean, l1, x2, hist_intersection, hellinger, canberra. (Default: [hist_intersection])')
     parser.add_argument('--preprocessings', nargs='+', type=str, default=[None],
-                        help='Preprocessing methods to apply to the images in both database and query set.')
+                        help="""Preprocessing methods applied to both DB and queries. Options: clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp, None. (Default: [None])\n
+                                If you want to add an option of no preprocessing to a list, add either an invalid argument (such as None) to the list or an empty string
+                                in case of using a yaml file. Example terminal: [None, l1]. Example yaml: ['', euclidean]""")
     parser.add_argument('--val', type=bool, default=False,
-                        help='Boolean to determine whether to do validation')
+                        help='Whether to run validation (expects gt_corresps.pkl in query directory). Options: True / False. (Default: False)')
+    parser.add_argument('--pickle_filename', type=str, default=None,
+                        help='Boolean to determine whether to save results in a pickle')
 
     tmp_args = parser.parse_args()
 
@@ -104,6 +107,7 @@ def main():
     distances = args.distances
     preprocessings = args.preprocessings
     val = args.val
+    output_pickle = args.pickle_filename
 
     # Prepare data structures and load groundtruth for grid search in case of validation
     if val:
@@ -180,19 +184,23 @@ def main():
                                 best_result[idx] = result
                                 best_mapk[idx] = mapk
 
-                    grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
-                    for result, k in zip(results, k_list):
-                        print(f"\nFor k = {k}, the most similar images from the dataset to the queries are:\n")
-                        print(result)
+                        grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
+
         
     if val:
-        os.makedirs('results', exist_ok=True)
+        os.makedirs('./results', exist_ok=True)
         grid_search_df.to_csv('results/grid_search_results.csv')
         for config, results, mapk, k in zip(best_config, best_result, best_mapk, k_list):
             print(f"\nFor K = {k}\n")
             print(f"Best results: {results}")
             print(f"Best config: {config}")
             print(f"Best mapk: {mapk:.4f}")
+
+    if output_pickle:
+        for result in results:
+            with open(output_pickle, "wb") as f:
+                pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 if __name__ == "__main__":
     main()
