@@ -71,37 +71,44 @@ class Database:
     Container for the image database used by the retrieval algorithm.
 
     This class loads images (``*.jpg``), optional sidecar metadata (``*.txt``),
-    and pre-computes per-image histograms for fast similarity search. It also
-    exposes utilities to query the database and to compute top-k matches for a
-    given query histogram.
+    and prepares structures for later histogram computation (performed when
+    change_color is first invoked). It also exposes utilities to query the database
+    and to compute top-k matches for a given query histogram.
 
     Parameters
     ----------
     path : str
         Root directory of the database. All ``*.jpg`` files in this directory
         are considered database entries.
+    bins : int
+        Number of histogram bins per channel.
+    color_space : {"rgb", "hsv", "gray_scale", "lab"}, optional
+        Color space used when processing images. Default ``"rgb"``.
+    preprocess : str or None, optional
+        Preprocessing operation key applied after color conversion (e.g. 'clahe').
+        If None, no preprocessing is applied.
     debug : bool, optional
         If True, prints additional information (e.g., ensemble details during
         retrieval). Default is ``False``.
-    color_space : {"rgb", "hsv", "gray_scale", "lab"}, optional
-        Color space used when loading images. Default is ``"rgb"``.
-        - ``"lab"`` applies CLAHE on the L channel before merging (contrast enhancement).
 
     Attributes
     ----------
     color_space : str
-        The color space applied to the images.
-    preprocess : str
-        The preprocessing method applied to the images.
-    image_paths : list of str
-        Absolute paths to all ``*.jpg`` images found under ``path``.
-    images : list of numpy.ndarray
-        Loaded images converted to the requested color space.
-    info : list of list[str]
-        Parsed per-image metadata read from matching ``.txt`` files, if present.
-        Each entry corresponds to one image; missing or invalid TXT files are skipped.
-    histograms : list of numpy.ndarray
-        L1-normalized histograms (concatenated per-channel for color images).
+        Current color space applied to processed images.
+    preprocess : str or None
+        Current preprocessing method tag.
+    bins : int
+        Number of bins per channel used for histogram computation.
+    image_paths : list[str]
+        Absolute paths to all discovered ``*.jpg`` images.
+    images_raw : list[numpy.ndarray]
+        Original BGR images as read by OpenCV (unconverted, unprocessed).
+    images : list[numpy.ndarray or None]
+        Processed images in the active color space.
+    info : list[list[str]]
+        Parsed metadata tokens from matching ``.txt`` files (if present).
+    histograms : list[numpy.ndarray or None]
+        L1-normalized histograms (computed after change_color).
     debug : bool
         Debug flag.
     """
@@ -150,7 +157,10 @@ class Database:
     
     def __load_db(self, db_path: str):
         """
-        Load images, optional TXT metadata, and compute histograms.
+        Load raw images and optional TXT metadata into memory.
+
+        This does NOT compute histograms nor apply color conversion; those steps
+        occur later in change_color.
 
         Parameters
         ----------
@@ -200,7 +210,9 @@ class Database:
 
     def __load_img(self, img_path: str):
         """
-        Load an image with OpenCV and convert it to the configured color space.
+        Load an image with OpenCV (BGR order) without color conversion.
+
+        Color space conversion and preprocessing are deferred to change_color.
 
         Parameters
         ----------
@@ -210,7 +222,7 @@ class Database:
         Returns
         -------
         numpy.ndarray
-            The loaded image in the requested color space.
+            Loaded BGR image (uint8).
         """
         image = cv2.imread(img_path)
         
@@ -220,12 +232,12 @@ class Database:
         """
         Compute an L1-normalized histogram for a grayscale or color image.
 
+        Uses the instance-wide self.bins value for each channel.
+
         Parameters
         ----------
         image : numpy.ndarray
-            Input image. Can be 2D (grayscale) or 3D with a channel dimension.
-        bins : int, optional
-            Number of bins per channel. Default is ``64``.
+            2D (grayscale) or 3D (H, W, C) uint8 image.
 
         Returns
         -------
@@ -250,7 +262,36 @@ class Database:
     
     def __preprocess_image(self, image):
         """
-        
+        Apply the configured preprocessing operation to an image.
+
+        This internal helper dispatches to the corresponding function in
+        operations.preprocessing based on the value of self.preprocess. If no
+        preprocessing method is configured (None or unknown key), the input
+        image is returned unchanged.
+
+        Parameters
+        ----------
+        image : numpy.ndarray
+            Image already converted to the current database color space
+            (see self.color_space). Expected dtype uint8.
+
+        Returns
+        -------
+        numpy.ndarray
+            Preprocessed (or original) image.
+
+        Notes
+        -----
+        Supported values for self.preprocess:
+        - 'clahe'
+        - 'hist_eq'
+        - 'gamma'
+        - 'contrast'
+        - 'gaussian_blur'
+        - 'median_blur'
+        - 'bilateral'
+        - 'unsharp'
+        Any other value results in a no-op.
         """
 
         if self.preprocess == 'clahe':
@@ -276,7 +317,28 @@ class Database:
     
     def change_color(self, color_space, preprocess=None):
         """
-        
+        Recompute database images and histograms in a new color space (and optional preprocessing).
+
+        Converts every raw image to the specified color_space, then applies the
+        selected preprocessing pipeline, and finally recomputes (and overwrites)
+        the per-image histograms.
+
+        Parameters
+        ----------
+        color_space : {"rgb", "hsv", "gray_scale", "lab"}
+            Target color space for subsequent processing and retrieval.
+        preprocess : str or None, optional
+            Preprocessing operation key (see __preprocess_image for supported
+            values). If None, no preprocessing is applied.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This operation is O(N) over the number of images and invalidates
+        previous histograms.
         """
         self.color_space = color_space
         self.preprocess = preprocess
@@ -289,7 +351,20 @@ class Database:
 
     def change_bins(self, bins):
         """
-        
+        Update the number of histogram bins and recompute all histograms.
+
+        Parameters
+        ----------
+        bins : int
+            New number of bins per channel used for histogram computation.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Only histograms are recomputed; images (and preprocessing) are left untouched.
         """
         self.bins = bins
         for idx, image in enumerate(self.images):
@@ -301,12 +376,12 @@ class Database:
 
         Parameters
         ----------
-        img_hist : array_like
-            L1-normalized query histogram (shape ``(bins,)`` for grayscale or
+        img_hist : numpy.ndarray
+            Query histogram (shape ``(bins,)`` for grayscale or
             ``(bins * C,)`` for color).
         distance_metric : str or sequence of str
             One or more metric names from:
-            ``{"l1", "x2", "euclidean", "hist_intersection", "hellinger"}``.
+            ``{"l1", "x2", "euclidean", "hist_intersection", "hellinger", "canberra"}``.
         k : int, optional
             Number of nearest neighbors to return. Default is ``1``.
         weights : sequence of float, optional
@@ -315,11 +390,11 @@ class Database:
         ensemble_method : {"rank", "score"}, optional
             Method to combine multiple metrics:
             - ``"rank"`` : Sum of per-metric ranks (more robust to scale).
-            - ``"score"`` : Min–max normalize each distance vector, then weighted sum.
+            - ``"score"`` : Min-max normalize each distance vector, then weighted sum.
 
         Returns
         -------
-        list of int
+        list[int]
             Indices of the top-k most similar images (ascending by aggregate distance).
         """
 
