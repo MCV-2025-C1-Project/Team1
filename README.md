@@ -21,15 +21,15 @@ Create and activate the virtual environment:
 
 Windows (PowerShell):
 ```bash
-python -m venv venv
-venv\Scripts\Activate.ps1
-```
-Linux or macOS:
-```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 ```
 
+Linux or macOS:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
 
 Install dependencies:
 ```bash
