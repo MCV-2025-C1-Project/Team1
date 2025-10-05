@@ -11,6 +11,7 @@ import yaml
 
 import constants
 import metrics.average_precision as average_precision
+import operations.preprocessing as preprocessing
 from database import Database
 
 
@@ -69,12 +70,14 @@ def parse_args():
                         help='Path to the query image directory.')
     parser.add_argument('--k', nargs='+', type=int,
                         help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
-    parser.add_argument('--color_space', nargs='+', type=str, default='lab',
+    parser.add_argument('--color_space', nargs='+', type=str, default=['lab'],
                         help='Name of the color space: rgb, hsv, gray_scale, lab')
-    parser.add_argument('--bins', type=int, nargs='+', default=64,
+    parser.add_argument('--bins', type=int, nargs='+', default=[64],
                         help='Number of bins for the histogram per channel')
     parser.add_argument('--distances', nargs='+', type=str, default=['hist_intersection'],
                         help='List of similarity metrics to use (default: hist_intersection).')
+    parser.add_argument('--preprocessings', nargs='+', type=str, default=[None],
+                        help='Preprocessing methods to apply to the images in both database and query set.')
     parser.add_argument('--val', type=bool, default=False,
                         help='Boolean to determine whether to do validation')
 
@@ -95,10 +98,11 @@ def main():
     # Load arguments into variables
     database_path = args.database_path
     query_path = args.query_path
+    k_list = args.k
     color_spaces = args.color_space if isinstance(args.color_space, list) else [args.color_space]
     bins = args.bins if isinstance(args.bins, list) else [args.bins]
     distances = args.distances
-    k_list = args.k
+    preprocessings = args.preprocessings
     val = args.val
 
     # Prepare data structures and load groundtruth for grid search in case of validation
@@ -106,7 +110,7 @@ def main():
         best_config = [[] for _ in range(len(k_list))]
         best_result = [[] for _ in range(len(k_list))]
         best_mapk = [0 for _ in range(len(k_list))]
-        grid_search_df = pd.DataFrame(columns=['color_space', 'bins', 'distances', *[f'mapk{k}' for k in k_list]])
+        grid_search_df = pd.DataFrame(columns=['color_space', 'preprocess', 'bins', 'distances', *[f'mapk{k}' for k in k_list]])
         
         with open(os.path.join(query_path, 'gt_corresps.pkl'), 'rb') as f:
             groundtruth = pickle.load(f)
@@ -124,59 +128,71 @@ def main():
     
     # Loop through all arguments (GridSearch)
     for cs in color_spaces:
-        db.change_color(cs)
-        for single_bin in bins:
-            db.change_bins(single_bin)
-            for dist in distances:
-                results = [[] for _ in k_list]
-                for image in query_images:
-                    image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
+        if cs not in list(constants.CV2_CVT_COLORS.keys()): continue
+        for preprocess in preprocessings:
+            db.change_color(cs, preprocess)
+            for single_bin in bins:
+                db.change_bins(single_bin)
+                for dist in distances:
+                    results = [[] for _ in k_list]
+                    for image in query_images:
+                        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
 
-                    if cs == 'lab_processed':
-                        l, a, b = cv2.split(image)
-                        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                        l_eq = clahe.apply(l)
-                        image = cv2.merge((l_eq, a, b))
+                        if preprocess == 'clahe':
+                            image = preprocessing.clahe_preprocessing(image, cs)
+                        elif preprocess == 'hist_eq':
+                            image = preprocessing.hist_eq(image, cs)
+                        elif preprocess == 'gamma':
+                            image = preprocessing.gamma(image)
+                        elif preprocess == 'contrast':
+                            image = preprocessing.contrast(image)
+                        elif preprocess == 'gaussian_blur':
+                            image = preprocessing.gaussian_blur(image)
+                        elif preprocess == 'median_blur':
+                            image = preprocessing.median_blur(image)
+                        elif preprocess == 'bilateral':
+                            image = preprocessing.bilateral(image)
+                        elif preprocess == 'unsharp':
+                            image = preprocessing.unsharp(image)
 
-                    # Compute query histogram (image descriptor)
-                    if image.ndim == 2:
-                        hist = cv2.calcHist([image], [0], None, [single_bin], [0, 256]).ravel()
-                    else:
-                        H, W, C = image.shape
-                        hists = [cv2.calcHist([image], [i], None, [single_bin], [0, 256]).ravel() for i in range(C)]
-                        hist = np.concatenate(hists, axis=0)
-                    cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+                        # Compute query histogram (image descriptor)
+                        if image.ndim == 2:
+                            hist = cv2.calcHist([image], [0], None, [single_bin], [0, 256]).ravel()
+                        else:
+                            H, W, C = image.shape
+                            hists = [cv2.calcHist([image], [i], None, [single_bin], [0, 256]).ravel() for i in range(C)]
+                            hist = np.concatenate(hists, axis=0)
+                        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
 
-                    for i, k in enumerate(k_list):
-                        k_info = db.get_top_k_similar_images(hist, dist, k = k)
-                        results[i].append(k_info)
-                
-                if val:
-                    mapk_list = []
-                    for idx, (result, k) in enumerate(zip(results, k_list)):
-                        mapk = average_precision.mapk(groundtruth, result, k = k)
-                        mapk_list.append(mapk)
-                        print(f"MAP@{k}: {mapk:.4f}")
+                        for i, k in enumerate(k_list):
+                            k_info = db.get_top_k_similar_images(hist, dist, k = k)
+                            results[i].append(k_info)
+                    
+                    if val:
+                        mapk_list = []
+                        for idx, (result, k) in enumerate(zip(results, k_list)):
+                            mapk = average_precision.mapk(groundtruth, result, k=k)
+                            mapk_list.append(mapk)
+                            print(f"MAP@{k}: {mapk:.4f}")
 
-                        if mapk > best_mapk[idx]:
-                            best_config[idx] = [cs, single_bin, dist]
-                            best_result[idx] = result
-                            best_mapk[idx] = mapk
+                            if mapk > best_mapk[idx]:
+                                best_config[idx] = [cs, preprocess, single_bin, dist]
+                                best_result[idx] = result
+                                best_mapk[idx] = mapk
 
-                grid_search_df.loc[len(grid_search_df)] = [cs, single_bin, dist, *mapk_list]
-                for result, k in zip(results, k_list):
-                    print(f"\nFor k = {k}, the most similar images from the dataset to the queries are:\n")
-                    print(result)
+                    grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
+                    for result, k in zip(results, k_list):
+                        print(f"\nFor k = {k}, the most similar images from the dataset to the queries are:\n")
+                        print(result)
         
     if val:
-        grid_search_df.to_csv('grid_search_results.csv')
+        os.makedirs('results', exist_ok=True)
+        grid_search_df.to_csv('results/grid_search_results.csv')
         for config, results, mapk, k in zip(best_config, best_result, best_mapk, k_list):
             print(f"\nFor K = {k}\n")
             print(f"Best results: {results}")
             print(f"Best config: {config}")
             print(f"Best mapk: {mapk:.4f}")
-
-                
 
 if __name__ == "__main__":
     main()

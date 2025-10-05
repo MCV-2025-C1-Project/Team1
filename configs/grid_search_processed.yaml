@@ -1,11 +1,12 @@
 data:
-  database_path: ../Datasets/BBDD/
-  query_path: ../Datasets/qsd1_w1/
+  database_path: ../BBDD/
+  query_path: ../qsd1_w1/
 
 retrieval:
-  color_space: [gray_scale, rgb, hsv, lab_processed]
-  bins: [256, 200, 128, 100, 90, 80, 70, 60, 50, 40, 30]
+  color_space: [gray_scale, rgb, hsv, lab, ycbcr]
+  bins: [256, 240, 230, 220, 210, 200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 1]
   distances: [euclidean, l1, x2, hist_intersection, hellinger, canberra]
+  preprocessings: ['', clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp]
   k: [1, 5]
 
 evaluation:

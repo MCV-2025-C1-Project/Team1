@@ -5,8 +5,9 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-import metrics.distances as distances
 import constants
+import metrics.distances as distances
+import operations.preprocessing as preprocessing
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -89,9 +90,9 @@ class Database:
     Attributes
     ----------
     color_space : str
-        The color space used to load images.
-    debug : bool
-        Debug flag.
+        The color space applied to the images.
+    preprocess : str
+        The preprocessing method applied to the images.
     image_paths : list of str
         Absolute paths to all ``*.jpg`` images found under ``path``.
     images : list of numpy.ndarray
@@ -101,14 +102,17 @@ class Database:
         Each entry corresponds to one image; missing or invalid TXT files are skipped.
     histograms : list of numpy.ndarray
         L1-normalized histograms (concatenated per-channel for color images).
+    debug : bool
+        Debug flag.
     """
-    def __init__(self, path: str, bins: int, debug: bool=False, color_space: constants.COLOR_SPACES='rgb'):
+    def __init__(self, path: str, bins: int, color_space: constants.COLOR_SPACES='rgb', preprocess=None, debug: bool=False):
         self.color_space = color_space
-        self.debug = debug
+        self.preprocess = preprocess
         self.bins = bins
+        self.debug = debug
         
         self.__load_db(path)
-        self.change_color(color_space)
+        self.change_color(color_space, preprocess)
     
     def __len__(self):
         """
@@ -169,12 +173,11 @@ class Database:
                 self.info.append(info)
             except:
                 pass
-            histogram = self.__compute_histogram(image)
 
+            self.image_paths.append(jpg_file)
             self.images_raw.append(image)
             self.images.append(None)
-            self.histograms.append(histogram)
-            self.image_paths.append(jpg_file)
+            self.histograms.append(None)
 
     def __parse_txt(self, txt_path: str):
         """
@@ -232,38 +235,62 @@ class Database:
             the number of channels in ``image``.
         """
 
-        if image.ndim == 2 or (image.ndim == 3 and image.shape[2] == 1):
+        if image.ndim == 2:
             hist = cv2.calcHist([image], [0], None, [self.bins], [0, 256]).ravel()
-            cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
-            """
-            if self.debug:
-                save_histogram_jpg(hist, './db.jpg')
-            """
-            return hist
-
-        hists = [
-            cv2.calcHist([image], [i], None, [self.bins], [0, 256]).ravel()
-            for i in range(image.shape[2])
-        ]
-        hist = np.concatenate(hists, axis=0)
+        else:
+            H, W, C = image.shape
+            hists = [cv2.calcHist([image], [i], None, [self.bins], [0, 256]).ravel() for i in range(C)]
+            hist = np.concatenate(hists, axis=0)
         cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+        """
+        if self.debug:
+            save_histogram_jpg(hist, './db.jpg')
+        """
         return hist
     
-    def change_color(self, color_space):
+    def __preprocess_image(self, image):
+        """
+        
+        """
+
+        if self.preprocess == 'clahe':
+            preprocessed_image = preprocessing.clahe_preprocessing(image, self.color_space)
+        elif self.preprocess == 'hist_eq':
+            preprocessed_image = preprocessing.hist_eq(image, self.color_space)
+        elif self.preprocess == 'gamma':
+            preprocessed_image = preprocessing.gamma(image)
+        elif self.preprocess == 'contrast':
+            preprocessed_image = preprocessing.contrast(image)
+        elif self.preprocess == 'gaussian_blur':
+            preprocessed_image = preprocessing.gaussian_blur(image)
+        elif self.preprocess == 'median_blur':
+            preprocessed_image = preprocessing.median_blur(image)
+        elif self.preprocess == 'bilateral':
+            preprocessed_image = preprocessing.bilateral(image)
+        elif self.preprocess == 'unsharp':
+            preprocessed_image = preprocessing.unsharp(image)
+        else:
+            preprocessed_image = image
+
+        return preprocessed_image
+    
+    def change_color(self, color_space, preprocess=None):
+        """
+        
+        """
         self.color_space = color_space
+        self.preprocess = preprocess
         for idx, image in enumerate(self.images_raw):
             processed_image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[self.color_space])
-
-            if self.color_space == 'lab_processed':
-                l, a, b = cv2.split(processed_image)
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                l_eq = clahe.apply(l)
-                processed_image = cv2.merge((l_eq, a, b))
+            processed_image = self.__preprocess_image(processed_image)
             
             self.images[idx] = processed_image
             self.histograms[idx] = self.__compute_histogram(processed_image)
-    
+
     def change_bins(self, bins):
+        """
+        
+        """
         self.bins = bins
         for idx, image in enumerate(self.images):
             self.histograms[idx] = self.__compute_histogram(image)

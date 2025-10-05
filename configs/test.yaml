@@ -1,0 +1,13 @@
+data:
+  database_path: ../BBDD/
+  query_path: ../qsd1_w1/
+
+retrieval:
+  color_space: [lab]
+  bins: [100]
+  distances: [canberra]
+  preprocessings: [clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp]
+  k: [1, 5]
+
+evaluation:
+  val: true
