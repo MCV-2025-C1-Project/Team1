@@ -7,7 +7,7 @@ import numpy as np
 
 import constants
 import metrics.distances as distances
-import operations.preprocessing as preprocessing
+from operations import histograms, preprocessing
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -112,10 +112,12 @@ class Database:
     debug : bool
         Debug flag.
     """
-    def __init__(self, path: str, bins: int, color_space: constants.COLOR_SPACES='rgb', preprocess=None, debug: bool=False):
+    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, hist_dims: int = 1, bins: int = 64, hierarchy: int = 1, debug: bool=False):
         self.color_space = color_space
         self.preprocess = preprocess
+        self.hist_dims = hist_dims
         self.bins = bins
+        self.hierarchy = hierarchy
         self.debug = debug
         
         self.__load_db(path)
@@ -246,18 +248,14 @@ class Database:
             For multi-channel images, shape is ``(bins * C,)`` where ``C`` is
             the number of channels in ``image``.
         """
-
-        if image.ndim == 2:
-            hist = cv2.calcHist([image], [0], None, [self.bins], [0, 256]).ravel()
-        else:
-            H, W, C = image.shape
-            hists = [cv2.calcHist([image], [i], None, [self.bins], [0, 256]).ravel() for i in range(C)]
-            hist = np.concatenate(hists, axis=0)
-        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
-        """
-        if self.debug:
-            save_histogram_jpg(hist, './db.jpg')
-        """
+        if self.hist_dims == 1:
+            hist = histograms.gen_1d_hist(image, self.hierarchy, self.bins)
+        elif self.hist_dims == 2:
+            hist = histograms.gen_2d_hist(image, self.hierarchy, self.bins)
+        elif self.hist_dims == 3:
+            hist = histograms.gen_3d_hist(image, self.hierarchy, self.bins)
+        for idx, histogram in enumerate(hist):
+            cv2.normalize(histogram, hist[idx], alpha=1.0, norm_type=cv2.NORM_L1)
         return hist
     
     def __preprocess_image(self, image):
@@ -349,7 +347,7 @@ class Database:
             self.images[idx] = processed_image
             self.histograms[idx] = self.__compute_histogram(processed_image)
 
-    def change_bins(self, bins):
+    def change_hist(self, hierarchy, hist_dims, bins):
         """
         Update the number of histogram bins and recompute all histograms.
 
@@ -366,6 +364,8 @@ class Database:
         -----
         Only histograms are recomputed; images (and preprocessing) are left untouched.
         """
+        self.hierarchy = hierarchy
+        self.hist_dims = hist_dims
         self.bins = bins
         for idx, image in enumerate(self.images):
             self.histograms[idx] = self.__compute_histogram(image)
@@ -402,21 +402,24 @@ class Database:
         def _dist_for_metric(m):
             d = np.empty(len(self.histograms), dtype=np.float64)
             for idx, h in enumerate(self.histograms):
-                if m == 'l1':
-                    d[idx] = distances.l1_distance(img_hist, h)
-                elif m == 'x2':
-                    d[idx] = distances.x2_distance(img_hist, h)
-                elif m == 'euclidean':
-                    d[idx] = distances.euclidean_distance(img_hist, h)
-                #hist_intersection here returns a *distance* (``1 - similarity``)
-                elif m == 'hist_intersection':
-                    d[idx] = distances.hist_intersection(img_hist, h)
-                elif m == 'hellinger':
-                    d[idx] = distances.hellinger_kernel(img_hist, h)
-                elif m == 'canberra':
-                    d[idx] = distances.canberra_distance(img_hist, h)
-                else:
-                    raise ValueError(f"Unknown metric: {m}")
+                hier_dist = []
+                for level in range(self.hierarchy):
+                    if m == 'l1':
+                        hier_dist.append(distances.l1_distance(img_hist[level], h[level]))
+                    elif m == 'x2':
+                        hier_dist.append(distances.x2_distance(img_hist[level], h[level]))
+                    elif m == 'euclidean':
+                        hier_dist.append(distances.euclidean_distance(img_hist[level], h[level]))
+                    #hist_intersection here returns a *distance* (``1 - similarity``)
+                    elif m == 'hist_intersection':
+                        hier_dist.append(distances.hist_intersection(img_hist[level], h[level]))
+                    elif m == 'hellinger':
+                        hier_dist.append(distances.hellinger_kernel(img_hist[level], h[level]))
+                    elif m == 'canberra':
+                        hier_dist.append(distances.canberra_distance(img_hist[level], h[level]))
+                    else:
+                        raise ValueError(f"Unknown metric: {m}")
+                d[idx] = sum(hier_dist)
             return d
 
         metrics = distance_metric if isinstance(distance_metric, (list, tuple)) else [distance_metric]

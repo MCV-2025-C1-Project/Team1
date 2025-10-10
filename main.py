@@ -11,8 +11,8 @@ import yaml
 
 import constants
 import metrics.average_precision as average_precision
-import operations.preprocessing as preprocessing
 from database import Database
+from operations import histograms, preprocessing
 
 
 def parse_yaml(config):
@@ -63,10 +63,12 @@ def parse_args():
 
     parser.add_argument('--config', type=str,
                         help='Path to a YAML config file (loads presets).')
+    
     parser.add_argument('--database_path', type=str,
                         help='Path to the database directory (images).')
     parser.add_argument('--query_path', type=str,
                         help='Path to the query image directory.')
+    
     parser.add_argument('--k', nargs='+', type=int,
                         help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
     parser.add_argument('--color_space', nargs='+', type=str, default=['lab'],
@@ -79,6 +81,10 @@ def parse_args():
                         help="""Preprocessing methods applied to both DB and queries. Options: clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp, None. (Default: [None])\n
                                 If you want to add an option of no preprocessing to a list, add either an invalid argument (such as None) to the list or an empty string
                                 in case of using a yaml file. Example terminal: [None, l1]. Example yaml: ['', euclidean]""")
+    parser.add_argument('--hier_levels', nargs='+', type=int, default=[1],
+                        help='')
+    parser.add_argument('--hist_dims', nargs='+', type=int, default=[1],
+                        help='')
     parser.add_argument('--val', type=bool, default=False,
                         help='Whether to run validation (expects gt_corresps.pkl in query directory). Options: True / False. (Default: False)')
     parser.add_argument('--pickle_filename', type=str, default=None,
@@ -106,6 +112,8 @@ def main():
     bins = args.bins if isinstance(args.bins, list) else [args.bins]
     distances = args.distances
     preprocessings = args.preprocessings
+    hier_levels = args.hier_levels
+    hist_dims = args.hist_dims
     val = args.val
     output_pickle = args.pickle_filename
 
@@ -120,7 +128,7 @@ def main():
             groundtruth = pickle.load(f)
     
     # Load data
-    db = Database(database_path, bins=bins[0], color_space=color_spaces[0])
+    db = Database(database_path, bins=bins[0], color_space=color_spaces[0], hist_dims=hist_dims[0], hierarchy=hier_levels[0])
 
     query_abs_path = os.path.abspath(os.path.expanduser(query_path))
     query_pattern = os.path.join(query_abs_path, '*.jpg')
@@ -135,56 +143,58 @@ def main():
         if cs not in list(constants.CV2_CVT_COLORS.keys()): continue
         for preprocess in preprocessings:
             db.change_color(cs, preprocess)
-            for single_bin in bins:
-                db.change_bins(single_bin)
-                for dist in distances:
-                    results = [[] for _ in k_list]
-                    for image in query_images:
-                        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
+            for level in hier_levels:
+                for hist_dim in hist_dims:
+                    for single_bin in bins:
+                        db.change_hist(level, hist_dim, single_bin)
+                        for dist in distances:
+                            results = [[] for _ in k_list]
+                            for image in query_images:
+                                image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
 
-                        if preprocess == 'clahe':
-                            image = preprocessing.clahe_preprocessing(image, cs)
-                        elif preprocess == 'hist_eq':
-                            image = preprocessing.hist_eq(image, cs)
-                        elif preprocess == 'gamma':
-                            image = preprocessing.gamma(image)
-                        elif preprocess == 'contrast':
-                            image = preprocessing.contrast(image)
-                        elif preprocess == 'gaussian_blur':
-                            image = preprocessing.gaussian_blur(image)
-                        elif preprocess == 'median_blur':
-                            image = preprocessing.median_blur(image)
-                        elif preprocess == 'bilateral':
-                            image = preprocessing.bilateral(image)
-                        elif preprocess == 'unsharp':
-                            image = preprocessing.unsharp(image)
+                                if preprocess == 'clahe':
+                                    image = preprocessing.clahe_preprocessing(image, cs)
+                                elif preprocess == 'hist_eq':
+                                    image = preprocessing.hist_eq(image, cs)
+                                elif preprocess == 'gamma':
+                                    image = preprocessing.gamma(image)
+                                elif preprocess == 'contrast':
+                                    image = preprocessing.contrast(image)
+                                elif preprocess == 'gaussian_blur':
+                                    image = preprocessing.gaussian_blur(image)
+                                elif preprocess == 'median_blur':
+                                    image = preprocessing.median_blur(image)
+                                elif preprocess == 'bilateral':
+                                    image = preprocessing.bilateral(image)
+                                elif preprocess == 'unsharp':
+                                    image = preprocessing.unsharp(image)
 
-                        # Compute query histogram (image descriptor)
-                        if image.ndim == 2:
-                            hist = cv2.calcHist([image], [0], None, [single_bin], [0, 256]).ravel()
-                        else:
-                            H, W, C = image.shape
-                            hists = [cv2.calcHist([image], [i], None, [single_bin], [0, 256]).ravel() for i in range(C)]
-                            hist = np.concatenate(hists, axis=0)
-                        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+                                if hist_dim == 1:
+                                    hist = histograms.gen_1d_hist(image, level, single_bin)
+                                elif hist_dim == 2:
+                                    hist = histograms.gen_2d_hist(image, level, single_bin)
+                                elif hist_dim == 3:
+                                    hist = histograms.gen_3d_hist(image, level, single_bin)
+                                for idx, histogram in enumerate(hist):
+                                    cv2.normalize(histogram, hist[idx], alpha=1.0, norm_type=cv2.NORM_L1)                                
 
-                        for i, k in enumerate(k_list):
-                            k_info = db.get_top_k_similar_images(hist, dist, k = k)
-                            results[i].append(k_info)
-                    
-                    if val:
-                        mapk_list = []
-                        for idx, (result, k) in enumerate(zip(results, k_list)):
-                            mapk = average_precision.mapk(groundtruth, result, k=k)
-                            mapk_list.append(mapk)
-                            print(f"MAP@{k}: {mapk:.4f}")
+                                for i, k in enumerate(k_list):
+                                    k_info = db.get_top_k_similar_images(hist, dist, k = k)
+                                    results[i].append(k_info)
+                            
+                            if val:
+                                mapk_list = []
+                                for idx, (result, k) in enumerate(zip(results, k_list)):
+                                    mapk = average_precision.mapk(groundtruth, result, k=k)
+                                    mapk_list.append(mapk)
+                                    print(f"MAP@{k}: {mapk:.4f}")
 
-                            if mapk > best_mapk[idx]:
-                                best_config[idx] = [cs, preprocess, single_bin, dist]
-                                best_result[idx] = result
-                                best_mapk[idx] = mapk
+                                    if mapk > best_mapk[idx]:
+                                        best_config[idx] = [cs, preprocess, single_bin, dist]
+                                        best_result[idx] = result
+                                        best_mapk[idx] = mapk
 
-                        grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
+                                grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
 
         
     if val:
