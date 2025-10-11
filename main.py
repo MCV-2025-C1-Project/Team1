@@ -8,11 +8,12 @@ import cv2
 import numpy as np
 import pandas as pd
 import yaml
+from tqdm import tqdm
 
 import constants
 import metrics.average_precision as average_precision
-import operations.preprocessing as preprocessing
 from database import Database
+from operations import histograms, preprocessing
 
 
 def parse_yaml(config):
@@ -63,10 +64,12 @@ def parse_args():
 
     parser.add_argument('--config', type=str,
                         help='Path to a YAML config file (loads presets).')
+    
     parser.add_argument('--database_path', type=str,
                         help='Path to the database directory (images).')
     parser.add_argument('--query_path', type=str,
                         help='Path to the query image directory.')
+    
     parser.add_argument('--k', nargs='+', type=int,
                         help='List of K values for top-K retrieval (e.g. --k 1 5 10)')
     parser.add_argument('--color_space', nargs='+', type=str, default=['lab'],
@@ -79,10 +82,16 @@ def parse_args():
                         help="""Preprocessing methods applied to both DB and queries. Options: clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp, None. (Default: [None])\n
                                 If you want to add an option of no preprocessing to a list, add either an invalid argument (such as None) to the list or an empty string
                                 in case of using a yaml file. Example terminal: [None, l1]. Example yaml: ['', euclidean]""")
+    parser.add_argument('--hier_levels', nargs='+', type=int, default=[1],
+                        help='Number of divisions for the histogram')
+    parser.add_argument('--hist_dims', nargs='+', type=int, default=[1],
+                        help='Number of dimensions of the histogram')
     parser.add_argument('--val', type=bool, default=False,
                         help='Whether to run validation (expects gt_corresps.pkl in query directory). Options: True / False. (Default: False)')
+    parser.add_argument('--hierarchy', nargs='+', type=bool, default=[False],
+                        help='Whether to hierarchize the histogram or not')
     parser.add_argument('--pickle_filename', type=str, default=None,
-                        help='Boolean to determine whether to save results in a pickle')
+                        help='Boolean to determine whether to save results in a pickle.')
 
     tmp_args = parser.parse_args()
 
@@ -106,6 +115,9 @@ def main():
     bins = args.bins if isinstance(args.bins, list) else [args.bins]
     distances = args.distances
     preprocessings = args.preprocessings
+    hier_levels = args.hier_levels
+    hist_dims = args.hist_dims
+    hierarchy = args.hierarchy
     val = args.val
     output_pickle = args.pickle_filename
 
@@ -120,7 +132,7 @@ def main():
             groundtruth = pickle.load(f)
     
     # Load data
-    db = Database(database_path, bins=bins[0], color_space=color_spaces[0])
+    db = Database(database_path)
 
     query_abs_path = os.path.abspath(os.path.expanduser(query_path))
     query_pattern = os.path.join(query_abs_path, '*.jpg')
@@ -131,65 +143,66 @@ def main():
         query_images.append(image)
     
     # Loop through all arguments (GridSearch)
-    for cs in color_spaces:
-        if cs not in list(constants.CV2_CVT_COLORS.keys()): continue
-        for preprocess in preprocessings:
-            db.change_color(cs, preprocess)
-            for single_bin in bins:
-                db.change_bins(single_bin)
-                for dist in distances:
-                    results = [[] for _ in k_list]
-                    for image in query_images:
-                        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
+    num_tests = len(color_spaces) * len(preprocessings) * len(hierarchy) * len(hier_levels) * len(hist_dims) * len(bins) * len(distances) * len(query_images)
+    with tqdm(total=num_tests) as pbar:
+        for cs in color_spaces:
+            if cs not in list(constants.CV2_CVT_COLORS.keys()): continue
+            for preprocess in preprocessings:
+                db.change_color(cs, preprocess)
+                for is_hierarchy in hierarchy:
+                    for level in hier_levels:
+                        for hist_dim in hist_dims:
+                            for single_bin in bins:
+                                db.change_hist(level, hist_dim, single_bin)
+                                for dist in distances:
+                                    results = [[] for _ in k_list]
+                                    for image in query_images:
+                                        image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[cs])
 
-                        if preprocess == 'clahe':
-                            image = preprocessing.clahe_preprocessing(image, cs)
-                        elif preprocess == 'hist_eq':
-                            image = preprocessing.hist_eq(image, cs)
-                        elif preprocess == 'gamma':
-                            image = preprocessing.gamma(image)
-                        elif preprocess == 'contrast':
-                            image = preprocessing.contrast(image)
-                        elif preprocess == 'gaussian_blur':
-                            image = preprocessing.gaussian_blur(image)
-                        elif preprocess == 'median_blur':
-                            image = preprocessing.median_blur(image)
-                        elif preprocess == 'bilateral':
-                            image = preprocessing.bilateral(image)
-                        elif preprocess == 'unsharp':
-                            image = preprocessing.unsharp(image)
+                                        if preprocess == 'clahe':
+                                            image = preprocessing.clahe_preprocessing(image, cs)
+                                        elif preprocess == 'hist_eq':
+                                            image = preprocessing.hist_eq(image, cs)
+                                        elif preprocess == 'gamma':
+                                            image = preprocessing.gamma(image)
+                                        elif preprocess == 'contrast':
+                                            image = preprocessing.contrast(image)
+                                        elif preprocess == 'gaussian_blur':
+                                            image = preprocessing.gaussian_blur(image)
+                                        elif preprocess == 'median_blur':
+                                            image = preprocessing.median_blur(image)
+                                        elif preprocess == 'bilateral':
+                                            image = preprocessing.bilateral(image)
+                                        elif preprocess == 'unsharp':
+                                            image = preprocessing.unsharp(image)
 
-                        # Compute query histogram (image descriptor)
-                        if image.ndim == 2:
-                            hist = cv2.calcHist([image], [0], None, [single_bin], [0, 256]).ravel()
-                        else:
-                            H, W, C = image.shape
-                            hists = [cv2.calcHist([image], [i], None, [single_bin], [0, 256]).ravel() for i in range(C)]
-                            hist = np.concatenate(hists, axis=0)
-                        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+                                        hist = histograms.gen_hist(image, level, single_bin, hist_dim, is_hierarchy)                         
 
-                        for i, k in enumerate(k_list):
-                            k_info = db.get_top_k_similar_images(hist, dist, k = k)
-                            results[i].append(k_info)
-                    
-                    if val:
-                        mapk_list = []
-                        for idx, (result, k) in enumerate(zip(results, k_list)):
-                            mapk = average_precision.mapk(groundtruth, result, k=k)
-                            mapk_list.append(mapk)
-                            print(f"MAP@{k}: {mapk:.4f}")
+                                        for i, k in enumerate(k_list):
+                                            k_info = db.get_top_k_similar_images(hist, dist, k = k)
+                                            results[i].append(k_info)
+                                    
+                                    if val:
+                                        mapk_list = []
+                                        for idx, (result, k) in enumerate(zip(results, k_list)):
+                                            mapk = average_precision.mapk(groundtruth, result, k=k)
+                                            mapk_list.append(mapk)
+                                            # print(f"MAP@{k}: {mapk:.4f}")
 
-                            if mapk > best_mapk[idx]:
-                                best_config[idx] = [cs, preprocess, single_bin, dist]
-                                best_result[idx] = result
-                                best_mapk[idx] = mapk
+                                            if mapk > best_mapk[idx]:
+                                                best_config[idx] = [cs, preprocess, single_bin, dist]
+                                                best_result[idx] = result
+                                                best_mapk[idx] = mapk
 
-                        grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
+                                        grid_search_df.loc[len(grid_search_df)] = [cs, preprocess, single_bin, dist, *mapk_list]
+                                    
+                                        pbar.set_postfix({f"BestMAP@{k}": best_mapk[idx] for idx, k in enumerate(k_list)})
+                                    pbar.update(1)
 
         
     if val:
         os.makedirs('./results', exist_ok=True)
-        grid_search_df.to_csv('results/grid_search_results.csv')
+        grid_search_df.to_csv('results/grid_search_results_w2.csv')
         for config, results, mapk, k in zip(best_config, best_result, best_mapk, k_list):
             print(f"\nFor K = {k}\n")
             print(f"Best results: {results}")
