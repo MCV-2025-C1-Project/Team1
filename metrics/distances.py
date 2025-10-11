@@ -16,11 +16,7 @@ def euclidean_distance(prediction, groundtruth):
     float
         The Euclidean distance between `prediction` and `groundtruth`.
     """
-    distance = groundtruth - prediction
-    distance = distance * distance
-    distance = np.sum(distance)
-    distance = np.sqrt(distance)
-    return distance
+    return np.linalg.norm(prediction - groundtruth, axis=1)
 
 def l1_distance(prediction, groundtruth):
     """
@@ -38,10 +34,7 @@ def l1_distance(prediction, groundtruth):
     float
         The L1 distance between `prediction` and `groundtruth`.
     """
-    distance = groundtruth - prediction
-    distance = np.abs(distance)
-    distance = np.sum(distance)
-    return distance
+    return np.linalg.norm(prediction - groundtruth, ord=1, axis=1)
 
 def x2_distance(prediction, groundtruth):
     """
@@ -62,7 +55,7 @@ def x2_distance(prediction, groundtruth):
     num = (prediction - groundtruth) ** 2
     den = prediction + groundtruth + 1e-12
     term = num / den
-    return float(term.sum())
+    return np.sum(term, axis=1)
 
 def hist_intersection(prediction, groundtruth):
     """
@@ -81,8 +74,8 @@ def hist_intersection(prediction, groundtruth):
         The histogram intersection *distance* (1 - similarity) between
         `prediction` and `groundtruth`. The value ranges between 0 and 1.
     """
-    distance = np.min([groundtruth, prediction], axis=0)
-    distance = np.sum(distance)
+    distance = np.minimum(groundtruth, prediction)
+    distance = np.sum(distance, axis=1)
     return 1 - distance
 
 def hellinger_kernel(prediction, groundtruth):
@@ -104,8 +97,8 @@ def hellinger_kernel(prediction, groundtruth):
     """
     distance = groundtruth * prediction
     distance = np.sqrt(distance)
-    distance = np.sum(distance)
-    return np.sqrt(max(0.0, 1.0 - distance))
+    distance = np.sum(distance, axis=1)
+    return 1.0 - distance
 
 def canberra_distance(prediction, groundtruth):
     """
@@ -130,7 +123,7 @@ def canberra_distance(prediction, groundtruth):
     """
     num = np.abs(prediction - groundtruth)
     den = np.abs(prediction) + np.abs(groundtruth) + 1e-12
-    return float(np.sum(num / den))
+    return np.sum(num / den, axis=1)
 
 if __name__ == "__main__":
     generator = np.random.default_rng()

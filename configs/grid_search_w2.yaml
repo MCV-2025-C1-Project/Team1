@@ -7,8 +7,8 @@ retrieval:
   preprocesses_list: [clahe]
 
   bins_list: [128, 100, 64, 32, 16, 8]
-  blocks_list: [1, 2, 4, 8, 16]
-  hist_dims_list: [1, 2]
+  blocks_list: [1, 2, 4, 8, 16, 32]
+  hist_dims_list: [1, 2, 3]
 
   distances_list: [l1, x2, euclidean, hist_intersection, hellinger, canberra]
 

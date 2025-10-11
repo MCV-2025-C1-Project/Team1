@@ -14,7 +14,7 @@ def divide_image(image, blocks: int):
     new_image = np.reshape(new_image, [blocks, H // blocks, blocks, W // blocks, C]).transpose([0, 2, 1, 3, 4]).reshape(-1, H // blocks, W // blocks, C)
     return new_image
 
-def gen_hist(image, hierarchy_levels: int, bins: int, hist_dim: int, hierarchy: bool):
+def gen_hist_old(image, hierarchy_levels: int, bins: int, hist_dim: int, hierarchy: bool):
     H, W, C = image.shape
     hists = []
 
@@ -55,6 +55,24 @@ def gen_hist(image, hierarchy_levels: int, bins: int, hist_dim: int, hierarchy: 
     return hists
 
 def gen_hist(image, bins, num_windows, num_dimensions):
+    H, W, C = image.shape
+    windowed_image = divide_image(image, num_windows)
+    hists = []
+
+    for image_window in windowed_image:
+        if num_dimensions == 1:
+            hist = [cv2.calcHist([image_window], [i], None, [bins], [0, 256]).ravel() for i in range(C)]
+        elif num_dimensions == 2:
+            hist = [cv2.calcHist([image_window[..., c1], image_window[..., c2]], [0, 1], None, [bins, bins], [0, 256, 0, 256]) for c1 in range(C) for c2 in range(c1+1, C)]
+        elif num_dimensions == 3:
+            hist = [cv2.calcHist([image_window], [0, 1, 2], None, [bins, bins, bins], [0, 256, 0, 256, 0, 256])]
+        hist = np.stack(hist, axis=0).ravel()
+        cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L1)
+        hists.append(hist)
+    hists = np.stack(hists, axis=0).ravel()
+    return hists
+
+def gen_hist_hierarchical(image, bins, num_windows, num_dimensions):
     H, W, C = image.shape
     windowed_image = divide_image(image, num_windows)
     hists = []

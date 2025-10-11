@@ -134,6 +134,17 @@ def main():
     num_tests = len(bins_list) * len(blocks_list) * len(hist_dims_list) * len(distances_list)
     with tqdm(total=num_tests) as pbar:
         for bins, blocks, hist_dims in itertools.product(bins_list, blocks_list, hist_dims_list):
+            if (hist_dims == 2 and (bins > 64 or blocks > 16)) or (hist_dims == 3 and (bins > 32 or blocks > 8)):
+                pbar.set_postfix({
+                        "color_space": color_space,
+                        "preprocess": preprocess,
+                        "bins": bins,
+                        "blocks": blocks,
+                        "hist_dims": hist_dims
+                        })
+                pbar.update(len(distances_list))
+                continue
+
             db.change_hist(bins, blocks, hist_dims)
             for distance in distances_list:
                 results = [[] for _ in k_list]

@@ -340,7 +340,7 @@ class Database:
             processed_image = self.__preprocess_image(processed_image)
             
             self.images[idx] = processed_image
-            self.histograms[idx] = self.__compute_histogram(processed_image)
+        self.histograms = np.asarray([self.__compute_histogram(image) for image in self.images])
 
     def change_hist(self, bins, num_blocks, hist_dims):
         """
@@ -365,8 +365,7 @@ class Database:
         self.num_blocks = num_blocks
         self.hist_dims = hist_dims
         
-        for idx, image in enumerate(self.images):
-            self.histograms[idx] = self.__compute_histogram(image)
+        self.histograms = np.asarray([self.__compute_histogram(image) for image in self.images])
 
     def get_top_k_similar_images(self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
         """
@@ -398,23 +397,22 @@ class Database:
 
         # Helper to compute distances (convert similarities to distances if needed)
         def _dist_for_metric(m):
-            d = np.empty(len(self.histograms), dtype=np.float64)
-            for idx, h in enumerate(self.histograms):
-                if m == 'l1':
-                    d[idx] = distances.l1_distance(img_hist, h)
-                elif m == 'x2':
-                    d[idx] = distances.x2_distance(img_hist, h)
-                elif m == 'euclidean':
-                    d[idx] = distances.euclidean_distance(img_hist, h)
-                #hist_intersection here returns a *distance* (``1 - similarity``)
-                elif m == 'hist_intersection':
-                    d[idx] = distances.hist_intersection(img_hist, h)
-                elif m == 'hellinger':
-                    d[idx] = distances.hellinger_kernel(img_hist, h)
-                elif m == 'canberra':
-                    d[idx] = distances.canberra_distance(img_hist, h)
-                else:
-                    raise ValueError(f"Unknown metric: {m}")
+            img_hist_reshaped = img_hist.reshape(1, -1)
+            if m == 'l1':
+                d = distances.l1_distance(img_hist_reshaped, self.histograms)
+            elif m == 'x2':
+                d = distances.x2_distance(img_hist_reshaped, self.histograms)
+            elif m == 'euclidean':
+                d = distances.euclidean_distance(img_hist_reshaped, self.histograms)
+            #hist_intersection here returns a *distance* (``1 - similarity``)
+            elif m == 'hist_intersection':
+                d = distances.hist_intersection(img_hist_reshaped, self.histograms)
+            elif m == 'hellinger':
+                d = distances.hellinger_kernel(img_hist_reshaped, self.histograms)
+            elif m == 'canberra':
+                d = distances.canberra_distance(img_hist_reshaped, self.histograms)
+            else:
+                raise ValueError(f"Unknown metric: {m}")
             return d
 
         metrics = distance_metric if isinstance(distance_metric, (list, tuple)) else [distance_metric]
@@ -424,6 +422,7 @@ class Database:
             raise ValueError("weights must have same length as metrics")
 
         # Compute per-metric distance vectors
+        per_metric_d = np.vectorize(_dist_for_metric)
         per_metric_d = [ _dist_for_metric(m) for m in metrics ]
 
         n = len(self.histograms)
