@@ -112,12 +112,14 @@ class Database:
     debug : bool
         Debug flag.
     """
-    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, hist_dims: int = 1, bins: int = 64, hierarchy: int = 1, debug: bool=False):
+    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy_levels: int = 1, hierarchy: bool = False, debug: bool = False):
         self.color_space = color_space
         self.preprocess = preprocess
-        self.hist_dims = hist_dims
+
         self.bins = bins
-        self.hierarchy = hierarchy
+        self.num_blocks = num_blocks
+        self.hist_dims = hist_dims
+
         self.debug = debug
         
         self.__load_db(path)
@@ -248,14 +250,7 @@ class Database:
             For multi-channel images, shape is ``(bins * C,)`` where ``C`` is
             the number of channels in ``image``.
         """
-        if self.hist_dims == 1:
-            hist = histograms.gen_1d_hist(image, self.hierarchy, self.bins)
-        elif self.hist_dims == 2:
-            hist = histograms.gen_2d_hist(image, self.hierarchy, self.bins)
-        elif self.hist_dims == 3:
-            hist = histograms.gen_3d_hist(image, self.hierarchy, self.bins)
-        for idx, histogram in enumerate(hist):
-            cv2.normalize(histogram, hist[idx], alpha=1.0, norm_type=cv2.NORM_L1)
+        hist = histograms.gen_hist(image, self.bins, self.num_blocks, self.hist_dims)
         return hist
     
     def __preprocess_image(self, image):
@@ -347,7 +342,7 @@ class Database:
             self.images[idx] = processed_image
             self.histograms[idx] = self.__compute_histogram(processed_image)
 
-    def change_hist(self, hierarchy, hist_dims, bins):
+    def change_hist(self, bins, num_blocks, hist_dims):
         """
         Update the number of histogram bins and recompute all histograms.
 
@@ -364,9 +359,12 @@ class Database:
         -----
         Only histograms are recomputed; images (and preprocessing) are left untouched.
         """
-        self.hierarchy = hierarchy
-        self.hist_dims = hist_dims
+        if self.bins == bins and self.num_blocks == num_blocks and self.hist_dims == hist_dims: return
+
         self.bins = bins
+        self.num_blocks = num_blocks
+        self.hist_dims = hist_dims
+        
         for idx, image in enumerate(self.images):
             self.histograms[idx] = self.__compute_histogram(image)
 
@@ -402,24 +400,21 @@ class Database:
         def _dist_for_metric(m):
             d = np.empty(len(self.histograms), dtype=np.float64)
             for idx, h in enumerate(self.histograms):
-                hier_dist = []
-                for level in range(self.hierarchy):
-                    if m == 'l1':
-                        hier_dist.append(distances.l1_distance(img_hist[level], h[level]))
-                    elif m == 'x2':
-                        hier_dist.append(distances.x2_distance(img_hist[level], h[level]))
-                    elif m == 'euclidean':
-                        hier_dist.append(distances.euclidean_distance(img_hist[level], h[level]))
-                    #hist_intersection here returns a *distance* (``1 - similarity``)
-                    elif m == 'hist_intersection':
-                        hier_dist.append(distances.hist_intersection(img_hist[level], h[level]))
-                    elif m == 'hellinger':
-                        hier_dist.append(distances.hellinger_kernel(img_hist[level], h[level]))
-                    elif m == 'canberra':
-                        hier_dist.append(distances.canberra_distance(img_hist[level], h[level]))
-                    else:
-                        raise ValueError(f"Unknown metric: {m}")
-                d[idx] = sum(hier_dist)
+                if m == 'l1':
+                    d[idx] = distances.l1_distance(img_hist, h)
+                elif m == 'x2':
+                    d[idx] = distances.x2_distance(img_hist, h)
+                elif m == 'euclidean':
+                    d[idx] = distances.euclidean_distance(img_hist, h)
+                #hist_intersection here returns a *distance* (``1 - similarity``)
+                elif m == 'hist_intersection':
+                    d[idx] = distances.hist_intersection(img_hist, h)
+                elif m == 'hellinger':
+                    d[idx] = distances.hellinger_kernel(img_hist, h)
+                elif m == 'canberra':
+                    d[idx] = distances.canberra_distance(img_hist, h)
+                else:
+                    raise ValueError(f"Unknown metric: {m}")
             return d
 
         metrics = distance_metric if isinstance(distance_metric, (list, tuple)) else [distance_metric]

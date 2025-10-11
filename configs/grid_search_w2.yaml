@@ -3,13 +3,16 @@ data:
   query_path: datasets/qsd1_w1/
 
 retrieval:
-  color_space: [lab]
-  bins: [128, 64, 32, 16, 8]
-  distances: [l1, x2, euclidean, hist_intersection, hellinger, canberra]
-  preprocessings: [clahe]
-  hier_levels: [1, 2, 3, 4]
-  hist_dims: [1, 2, 3]
-  k: [1, 5]
+  color_space_list: [lab]
+  preprocesses_list: [clahe]
+
+  bins_list: [128, 100, 64, 32, 16, 8]
+  blocks_list: [1, 2, 4, 8, 16]
+  hist_dims_list: [1, 2]
+
+  distances_list: [l1, x2, euclidean, hist_intersection, hellinger, canberra]
+
+  k_list: [1, 5]
 
 evaluation:
   val: true

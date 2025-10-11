@@ -59,14 +59,9 @@ def x2_distance(prediction, groundtruth):
     float
         The Chi-squared distance between `prediction` and `groundtruth`.
     """
-    a = np.asarray(prediction, dtype=np.float64).ravel()
-    b = np.asarray(groundtruth, dtype=np.float64).ravel()
-    if a.shape != b.shape:
-        raise ValueError("Histograms must have the same length")
-
-    num = (a - b) ** 2
-    den = a + b
-    term = np.divide(num, den, out=np.zeros_like(num), where=den > 0)
+    num = (prediction - groundtruth) ** 2
+    den = prediction + groundtruth + 1e-12
+    term = num / den
     return float(term.sum())
 
 def hist_intersection(prediction, groundtruth):
@@ -133,10 +128,8 @@ def canberra_distance(prediction, groundtruth):
     float
         The Canberra distance between `prediction` and `groundtruth`.
     """
-    a = np.asarray(prediction, dtype=np.float64).ravel()
-    b = np.asarray(groundtruth, dtype=np.float64).ravel()
-    num = np.abs(a - b)
-    den = np.abs(a) + np.abs(b) + 1e-12
+    num = np.abs(prediction - groundtruth)
+    den = np.abs(prediction) + np.abs(groundtruth) + 1e-12
     return float(np.sum(num / den))
 
 if __name__ == "__main__":
