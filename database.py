@@ -270,7 +270,8 @@ if __name__ == "__main__":
             hi = cv2.calcHist([image], [i], None, [int(b)], [0, 256]).ravel()
             parts.append(hi)
         h = np.concatenate(parts, axis=0)
-        cv2.normalize(h, h, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        # cv2.normalize(h, h, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        cv2.normalize(h,h, alpha=1, norm_type=cv2.NORM_L1)
         return h
 
     def _normalize_prob(h):
@@ -287,7 +288,7 @@ if __name__ == "__main__":
           - 'hist_intersection' (on L1-normalized hists)
           - 'canberra'
         """
-        D = distances  # your provided distances module
+        D = distances  
 
         q = np.asarray(query_hist, dtype=np.float64).ravel()
         d = np.empty(len(db_hists), dtype=np.float64)
@@ -301,7 +302,12 @@ if __name__ == "__main__":
 
         if method == "canberra":
             for i, H in enumerate(db_hists):
-                d[i] = D.canberra_distance(q, H)
+               d[i] = D.canberra_distance(q, H)
+            return d
+        
+        if method == "l1":
+            for i, H in enumerate(db_hists):
+               d[i] = D.l1_distance(q, H)
             return d
 
         raise ValueError(f"Unsupported method here: {method}")
@@ -315,18 +321,13 @@ if __name__ == "__main__":
 
     # setups dels millors
     SETUPS = [
-        # top MAP@1
-        {
-            "name": "lab_40x3 + clahe + hist_intersection",
-            "bins": (40, 40, 40),
-            "sim": "hist_intersection",
-        },
-        # top MAP@5
+        
         {
             "name": "lab_128x3 + clahe + canberra",
             "bins": (128, 128, 128),
             "sim": "canberra",
-        },
+        }
+
     ]
 
     for setup in SETUPS:

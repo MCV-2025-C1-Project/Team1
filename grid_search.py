@@ -247,7 +247,7 @@ if __name__ == "__main__":
     rel_path_db = r'C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\BBDD'
     query_glob  = os.path.join(r'C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\qsd1_w1', '*.jpg')
     gt_path     = r"C:\Users\User\OneDrive\Escritorio\Master\C1\Project\Team1\datasets\qsd1_w1\gt_corresps.pkl"
-    csv_path    = "TESTS_v2.csv"
+    csv_path    = "TESTS_v3.csv"
  
     # -------- Grid to search --------:)
     HIST_GRID = {
@@ -271,17 +271,9 @@ if __name__ == "__main__":
     }
 
     SIM_METHODS = [
-        "l1",
-        "x2",
-        "euclidean",
-        "hist_intersection",   
-        "hellinger_kernel",    
-        "cosine",
-        "chebyshev",
+  
         "canberra",
-        "braycurtis",
-        "bhattacharyya",      
-        "js_divergence"       
+    
     ]
 
 
@@ -441,17 +433,8 @@ if __name__ == "__main__":
 
     # --- NEW: preprocessing grid -------------------------------------------------
     PREPROCESS_GRID = {
-        "none":              {"type": "none"},
         "clahe":             {"type": "clahe", "clipLimit": 2.0, "tileGridSize": (8, 8)},
-        "hist_eq":           {"type": "hist_eq"},
-        "gamma_0.8":         {"type": "gamma", "gamma": 0.8},
-        "gamma_1.2":         {"type": "gamma", "gamma": 1.2},
-        "contrast_1.2":      {"type": "contrast", "alpha": 1.2, "beta": 0.0},
-        "contrast_1.5":      {"type": "contrast", "alpha": 1.5, "beta": 0.0},
-        "gaussian_3":        {"type": "gaussian_blur", "ksize": 3, "sigma": 0},
-        "median_3":          {"type": "median_blur", "ksize": 3},
-        "bilateral_7_50":    {"type": "bilateral", "d": 7, "sigma": 50},
-        "unsharp_1.0":       {"type": "unsharp", "ksize": 3, "amount": 1.0},
+
     }
 
 

@@ -1,0 +1,10 @@
+Histogram_Method,Preprocess,Similarity_Method,MAP@1,MAP@5
+hsv_50_30_30,clahe,canberra,0.4667,0.5567
+hsv_60_20_20,clahe,canberra,0.4333,0.5067
+hsv_20_60_20,clahe,canberra,0.5333,0.5956
+hsv_32x3,clahe,canberra,0.5000,0.6111
+hsv_90_15_15,clahe,canberra,0.4333,0.5278
+hsv_72_18_18,clahe,canberra,0.4333,0.5111
+hsv_45_22_22,clahe,canberra,0.5333,0.5861
+lab_30x3,clahe,canberra,0.6000,0.7028
+lab_40x3,clahe,canberra,0.6000,0.6539
