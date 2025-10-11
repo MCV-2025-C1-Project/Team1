@@ -76,7 +76,7 @@ def plot_pr_curve(recalls_by_error,precisions_by_error, f1_by_error, errors):
         f"(P={precisions_by_error[best_idx]:.4f}, R={recalls_by_error[best_idx]:.4f})")
 
 
-dir_path = r'C:\Users\maiol\Desktop\Master\C1\Projects\Project2\qsd2_w1'
+dir_path = 'datasets\qsd2_w1'
 errors = [6] 
 use_micro = True 
 debug = False
@@ -108,12 +108,10 @@ for err in errors:
 
         borders = np.concatenate((first_col, last_col, first_row, last_row), axis=0)
         avg_color = np.mean(borders, axis=0)
+        std_dev_color = np.std(borders, axis=0) * 1.5
 
         colors = avg_color.tolist()
-        th = []
-        for color in colors:
-            th.append([color - err, color + err])
-        th = np.array(th, dtype=np.float32)
+        th = np.array([avg_color - std_dev_color, avg_color + std_dev_color], dtype=np.float32).transpose([1, 0])
 
         if th.shape[0] == 3:
             th_ab = th[1:]  
@@ -144,6 +142,13 @@ for err in errors:
 
         A_bin = (A > 127).astype(np.uint8)
         O_bin = (output_mask > 127).astype(np.uint8)
+
+        image_name = os.path.basename(base)
+        folder = "results"
+
+        cv.imwrite(os.path.join(folder, f"{image_name}_img.jpg"), image)
+        cv.imwrite(os.path.join(folder, f"{image_name}_output_mask.png"), mask)
+        cv.imwrite(os.path.join(folder, f"{image_name}_annotation.png"), A)
 
         TP = np.sum((A_bin == 1) & (O_bin == 1))
         FP = np.sum((A_bin == 0) & (O_bin == 1))
