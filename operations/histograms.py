@@ -63,17 +63,12 @@ def gen_hist_old(image, hierarchy_levels: int, bins: int, hist_dim: int, hierarc
     cv2.normalize(hists, hists, alpha=1.0, norm_type=cv2.NORM_L1)   
     return hists
 
-def gen_hist(image, bins, num_windows, num_dimensions, mask=None):
+def gen_hist(image, bins, num_windows, num_dimensions):
     H, W, C = image.shape
     windowed_image = divide_image(image, num_windows)
-    if mask is not None:
-        windowed_mask = divide_image(mask, num_windows)
     hists = []
 
-    for idx, image_window in enumerate(windowed_image):
-        if mask is not None:
-            image_window = image_window[windowed_mask[idx] == 255].reshape(1, -1, C)
-        
+    for image_window in windowed_image:        
         if num_dimensions == 1:
             hist = [cv2.calcHist([image_window], [i], None, [bins], [0, 256]).ravel() for i in range(C)]
         elif num_dimensions == 2:

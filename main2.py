@@ -4,16 +4,17 @@ import glob
 import itertools
 import os
 import pickle
+import time
 
 import cv2
+import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
-import numpy as np
 
 import constants
 import database
-import mask
+import operations.mask as mask
 from metrics import average_precision
 from operations import histograms, preprocessing
 
@@ -114,8 +115,6 @@ def main():
     query_abs_path = os.path.abspath(query_path)
     query_pattern = os.path.join(query_abs_path, '*.jpg')
     query_list = []
-    if masking:
-        masks_list = []
 
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         image = cv2.imread(image_path)
@@ -140,9 +139,7 @@ def main():
         if masking:
             mask_frame = mask.get_mask(image, color_space)
             top, left, bottom, right = mask.largest_axis_aligned_rectangle(mask_frame)
-            mask_frame = np.zeros_like(mask_frame)
-            mask_frame[top:bottom+1, left:right+1] = 255
-            masks_list.append(mask.get_mask(image, color_space))
+            image = image[top:bottom+1, left:right+1, ...]
         query_list.append(image)
     
     num_tests = len(bins_list) * len(blocks_list) * len(hist_dims_list) * len(distances_list)
@@ -163,12 +160,14 @@ def main():
             for distance in distances_list:
                 results = [[] for _ in k_list]
                 for idx, query in enumerate(query_list):
-                    mask_frame = masks_list[idx] if masking else None
-                    hist = histograms.gen_hist(query, bins, blocks, hist_dims, mask_frame)
+                    start_time = time.time()
+                    hist = histograms.gen_hist(query, bins, blocks, hist_dims)
+                    similar_images = db.get_top_k_similar_images(hist, distance)
 
                     for i, k in enumerate(k_list):
-                        k_info = db.get_top_k_similar_images(hist, distance, k=k)
-                        results[i].append(k_info)
+                        results[i].append(similar_images[:k])
+                    end_time = time.time()
+                    print(f"Elapsed time for image {end_time - start_time}")
 
                 if val:
                     mapk_list = []

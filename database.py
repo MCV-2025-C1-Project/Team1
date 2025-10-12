@@ -367,7 +367,7 @@ class Database:
         
         self.histograms = np.asarray([self.__compute_histogram(image) for image in self.images])
 
-    def get_top_k_similar_images(self, img_hist, distance_metric, k: int = 1, weights=None, ensemble_method: str = "score"):
+    def get_top_k_similar_images(self, img_hist, distance_metric, weights=None, ensemble_method: str = "score"):
         """
         Retrieve indices of the top-k most similar database images to a query histogram.
 
@@ -433,7 +433,7 @@ class Database:
                 ranks = np.empty(n, dtype=np.float64)
                 ranks[order] = np.arange(n)
                 agg += w * ranks
-            k_idx = np.argsort(agg)[:k]  
+            similar_images_idx = np.argsort(agg) 
 
         elif ensemble_method == "score":
             agg = np.zeros(n, dtype=np.float64)
@@ -442,13 +442,13 @@ class Database:
                 dmin, dmax = d.min(), d.max()
                 norm = (d - dmin) / (dmax - dmin + 1e-12)  
                 agg += w * norm
-            k_idx = np.argsort(agg)[:k]
+            similar_images_idx = np.argsort(agg)
         else:
             raise ValueError('ensemble_method must be "rank" or "score"')
 
         if self.debug:
             # Example: show which metrics/weights decided the winners
             print("Ensemble:", list(zip(metrics, weights)))
-            print("Top-k indices:", k_idx.tolist())
+            print("Top-k indices:", similar_images_idx.tolist())
 
-        return k_idx.tolist()
+        return similar_images_idx.tolist()

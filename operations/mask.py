@@ -259,7 +259,7 @@ if __name__ == '__main__':
     import os, glob, cv2
     from operations import preprocessing
     
-    dir_path = 'qsd2_w1'
+    dir_path = 'datasets/qsd2_w1'
     use_micro = True
     debug = False
 
