@@ -112,13 +112,14 @@ class Database:
     debug : bool
         Debug flag.
     """
-    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy_levels: int = 1, hierarchy: bool = False, debug: bool = False):
+    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy: bool = False, debug: bool = False):
         self.color_space = color_space
         self.preprocess = preprocess
 
         self.bins = bins
         self.num_blocks = num_blocks
         self.hist_dims = hist_dims
+        self.hierarchy = hierarchy
 
         self.debug = debug
         
@@ -250,7 +251,10 @@ class Database:
             For multi-channel images, shape is ``(bins * C,)`` where ``C`` is
             the number of channels in ``image``.
         """
-        hist = histograms.gen_hist(image, self.bins, self.num_blocks, self.hist_dims)
+        if self.hierarchy:
+            hist = histograms.gen_hist_hier(image, self.bins, self.num_blocks, self.hist_dims)
+        else:
+            hist = histograms.gen_hist(image, self.bins, self.num_blocks, self.hist_dims)
         return hist
     
     def __preprocess_image(self, image):

@@ -1,0 +1,22 @@
+data:
+  database_path: datasets/BBDD/
+  query_path: datasets/qst2_w2/
+
+retrieval:
+  color_space_list: [lab]
+  preprocesses_list: [clahe]
+  masking: true
+
+  bins_list: [16]
+  blocks_list: [8]
+  hist_dims_list: [1]
+
+  distances_list: [x2]
+
+  k_list: [10]
+
+evaluation:
+  val: false
+
+output:
+  pickle_filename: 'results/test2_result.pkl'
