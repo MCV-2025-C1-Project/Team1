@@ -47,7 +47,7 @@ To run the program, you have two options.
 The first one and more straightforward is to use one of the provided .yaml files inside the ```configs/``` folder. But before that remember to change the path to your database and query set in the .yaml files. Then you can run the program like this:
 
 ```bash
-python main.py --config configs/test.yaml
+python week1.py --config configs/test.yaml
 ```
 
 The second one is fine to run the program just once, but if you want to rerun a configuration we don't recommend using this. Instead of specifying a .yaml file, you should add the arguments when running the script like so:
@@ -70,7 +70,7 @@ You can run the program in two ways: using a YAML config (recommended) or passin
     ```
 2) Run with CLI arguments (quick one-off):
     ```bash
-    python main.py \
+    python week2.py \
     --database_path /path/to/database \
     --query_path /path/to/queries \
     --color_space_list lab \
