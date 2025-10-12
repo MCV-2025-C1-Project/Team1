@@ -5,6 +5,7 @@ import itertools
 import os
 import pickle
 import time
+import textwrap
 
 import cv2
 import numpy as np
@@ -33,7 +34,26 @@ def parse_yaml(config):
     return yaml_args
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Run image retrieval evaluation.",
+        epilog=textwrap.dedent('''\
+            Example usage:
+              python week2.py --k 1 5 10 \\
+                                 --database_path ./data/db \\
+                                 --query_path ./data/queries \\
+                                 --metrics hist_intersection \\
+                                 --color_space lab \\
+                                 --bins 64 \\
+                                 --val True \\
+
+            Notes:
+              - You can specify multiple K values using space-separated integers.
+              - Metrics can include: hist_intersection, euclidean, etc. Check metrics/distances.py file to see all the distance metrics.
+              - Both absolute and relative paths should work.
+              - For validation, the gt is expected to be in the same dir as the queries in a pickle format.
+        '''),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
     parser.add_argument('--config', type=str,
                         help='Path to a YAML config file (loads presets).')

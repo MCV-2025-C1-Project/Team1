@@ -45,7 +45,7 @@ def parse_args():
         description="Run image retrieval evaluation.",
         epilog=textwrap.dedent('''\
             Example usage:
-              python myscript.py --k 1 5 10 \\
+              python week1.py --k 1 5 10 \\
                                  --database_path ./data/db \\
                                  --query_path ./data/queries \\
                                  --metrics hist_intersection \\
