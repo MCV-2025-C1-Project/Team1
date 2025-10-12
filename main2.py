@@ -1,6 +1,7 @@
 
 import argparse
 import glob
+import itertools
 import os
 import pickle
 
@@ -8,9 +9,11 @@ import cv2
 import pandas as pd
 import yaml
 from tqdm import tqdm
-import itertools
+import numpy as np
+
 import constants
 import database
+import mask
 from metrics import average_precision
 from operations import histograms, preprocessing
 
@@ -45,6 +48,8 @@ def parse_args():
                         help="""Preprocessing methods applied to both DB and queries. Options: clahe, hist_eq, gamma, contrast, gaussian_blur, median_blur, bilateral, unsharp, None. (Default: [None])\n
                                 If you want to add an option of no preprocessing to a list, add either an invalid argument (such as None) to the list or an empty string
                                 in case of using a yaml file. Example terminal: [None, l1]. Example yaml: ['', euclidean]""")
+    parser.add_argument('--masking', type=bool, default=True,
+                        help='Whether to remove the background by getting a mask.')
     
     parser.add_argument('--bins_list', type=int, nargs='+', default=[64],
                         help='Number of histogram bins per channel. (Default: [64])')
@@ -80,6 +85,7 @@ def main():
 
     color_spaces_list = args.color_space_list
     preprocesses_list = args.preprocesses_list
+    masking = args.masking
 
     bins_list = args.bins_list
     blocks_list = args.blocks_list
@@ -91,10 +97,8 @@ def main():
     val = args.val
     output_pickle = args.pickle_filename
 
-
     color_space = color_spaces_list[0]
     preprocess = preprocesses_list[0]
-
 
     if val:
         best_config = [[] for _ in range(len(k_list))]
@@ -110,6 +114,9 @@ def main():
     query_abs_path = os.path.abspath(query_path)
     query_pattern = os.path.join(query_abs_path, '*.jpg')
     query_list = []
+    if masking:
+        masks_list = []
+
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, constants.CV2_CVT_COLORS[color_spaces_list[0]])
@@ -129,6 +136,13 @@ def main():
             image = preprocessing.bilateral(image)
         elif preprocess == 'unsharp':
             image = preprocessing.unsharp(image)
+        
+        if masking:
+            mask_frame = mask.get_mask(image, color_space)
+            top, left, bottom, right = mask.largest_axis_aligned_rectangle(mask_frame)
+            mask_frame = np.zeros_like(mask_frame)
+            mask_frame[top:bottom+1, left:right+1] = 255
+            masks_list.append(mask.get_mask(image, color_space))
         query_list.append(image)
     
     num_tests = len(bins_list) * len(blocks_list) * len(hist_dims_list) * len(distances_list)
@@ -148,8 +162,9 @@ def main():
             db.change_hist(bins, blocks, hist_dims)
             for distance in distances_list:
                 results = [[] for _ in k_list]
-                for query in query_list:
-                    hist = histograms.gen_hist(query, bins, blocks, hist_dims)
+                for idx, query in enumerate(query_list):
+                    mask_frame = masks_list[idx] if masking else None
+                    hist = histograms.gen_hist(query, bins, blocks, hist_dims, mask_frame)
 
                     for i, k in enumerate(k_list):
                         k_info = db.get_top_k_similar_images(hist, distance, k=k)

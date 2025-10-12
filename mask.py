@@ -131,7 +131,7 @@ def find_rectangle(mask, black_weight: float = 1.0, coarse_step: int = 16, min_s
 
     return final_mask
 
-def get_mask(image, color_space: str, num_std_dev: int = 1.5, kernel_percentage1: float = 0.05, kernel_percentage2: float = 0.1):
+def get_mask(image, color_space: str, num_std_dev: float = 1.5):
     H, W, C = image.shape
 
     # Get image border's colors for thresholding
@@ -141,53 +141,125 @@ def get_mask(image, color_space: str, num_std_dev: int = 1.5, kernel_percentage1
     last_row  = image[H - 1, :]
 
     borders = np.concatenate([first_col, last_col, first_row, last_row], axis=0)
+
     mean_color = np.mean(borders, axis=0)
     std_dev_color = np.std(borders, axis=0) * num_std_dev
 
-    threshold = np.array([mean_color - std_dev_color, mean_color + std_dev_color], dtype=np.float32).transpose([1, 0])
+    # threshold: shape (C, 2) -> [:,0]=lower (float), [:,1]=upper (float)
+    threshold = np.stack([mean_color - std_dev_color, mean_color + std_dev_color], axis=1).astype(np.float32)
 
     if color_space == 'lab':
+        # Drop L channel, keep a,b
         threshold = threshold[1:]
-    elif color_space == 'hsv':
-        threshold = threshold[:2]
+        # OpenCV Lab uses 0..255 for L,a,b in uint8 representation
+        mins = np.array([0, 0], dtype=np.float32)
+        maxs = np.array([255, 255], dtype=np.float32)
 
-    lower_threshold = np.clip(np.round(threshold[:, 0]), 0, 255).astype(np.uint8)
-    upper_threshold = np.clip(np.round(threshold[:, 1]), 0, 255).astype(np.uint8)
+        lower_threshold = np.clip(np.round(threshold[:, 0]), mins, maxs).astype(np.uint8)
+        upper_threshold = np.clip(np.round(threshold[:, 1]), mins, maxs).astype(np.uint8)
 
-    if color_space == 'lab':
-        image = image[..., 1:]
-        mask_background = np.all((lower_threshold.reshape(1, 1, 2) <= image) & (image <= upper_threshold.reshape(1, 1, 2)), axis=2).astype(np.uint8) * 255
-        mask_frame = cv2.bitwise_not(mask_background)
+        # Use a,b only
+        ab = image[..., 1:]
+        mask_background = np.all(
+            (lower_threshold.reshape(1, 1, 2) <= ab) & (ab <= upper_threshold.reshape(1, 1, 2)),
+            axis=2
+        ).astype(np.uint8) * 255
+
     elif color_space == 'hsv':
-        image = image[..., :2]
-        mask_background = np.all((lower_threshold.reshape(1, 1, 2) <= image) & (image <= upper_threshold.reshape(1, 1, 2))).astype(np.uint8) * 255
-        mask_frame = cv2.bitwise_not(mask_background)
+
+        mins = np.array([0,   0,   0  ], dtype=np.float32)
+        maxs = np.array([179, 255, 255], dtype=np.float32)
+
+        lower = np.clip(np.round(threshold[:, 0]), mins, maxs).astype(np.int16)
+        upper = np.clip(np.round(threshold[:, 1]), mins, maxs).astype(np.int16)
+
+        Hc = image[..., 0].astype(np.int16)
+        Sc = image[..., 1].astype(np.int16)
+        Vc = image[..., 2].astype(np.int16)
+
+        if lower[0] <= upper[0]:
+            mask_h = (Hc >= lower[0]) & (Hc <= upper[0])
+        else:
+            mask_h = (Hc >= lower[0]) | (Hc <= upper[0])
+
+        mask_s = (Sc >= lower[1]) & (Sc <= upper[1])
+        mask_v = (Vc >= lower[2]) & (Vc <= upper[2])
+
+        mask_background = (mask_h & mask_s & mask_v).astype(np.uint8) * 255
     else:
-        mask_background = np.all((lower_threshold.reshape(1, 1, 3) <= image) & (image <= upper_threshold.reshape(1, 1, 3))).astype(np.uint8) * 255
-        mask_frame = cv2.bitwise_not(mask_background)
+        mins = np.array([0, 0, 0], dtype=np.float32)
+        maxs = np.array([255, 255, 255], dtype=np.float32)
 
+        lower_threshold = np.clip(np.round(threshold[:, 0]), mins, maxs).astype(np.uint8)
+        upper_threshold = np.clip(np.round(threshold[:, 1]), mins, maxs).astype(np.uint8)
+
+        mask_background = np.all(
+            (lower_threshold.reshape(1, 1, 3) <= image) & (image <= upper_threshold.reshape(1, 1, 3)),
+            axis=2
+        ).astype(np.uint8) * 255
+
+    mask_frame = cv2.bitwise_not(mask_background)
+
+    # Keep only largest connected component (the frame)
     num, labels, stats, _ = cv2.connectedComponentsWithStats(mask_frame, connectivity=8)
     if num > 1:
         largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
     else:
         largest_label = 0
-    
+
     mask_frame = np.zeros_like(mask_frame)
     mask_frame[labels == largest_label] = 255
 
+    # Fill short zero runs horizontally and vertically
     mask_frame = np.apply_along_axis(fill_short_zero_runs, 0, mask_frame)
     mask_frame = np.apply_along_axis(fill_short_zero_runs, 1, mask_frame).astype(np.uint8)
 
-    # Get best rectangle
-    mask_frame = find_rectangle(mask_frame)
+    # Optionally: find best rectangle
+    # mask_frame = find_rectangle(mask_frame)
 
     return mask_frame
+
+def largest_axis_aligned_rectangle(mask: np.ndarray):
+    """
+    mask: binary image (uint8) with 1/255 for foreground (white), 0 for background (black)
+    returns (top, left, bottom, right) inclusive coordinates of the maximal rectangle
+    """
+    # ensure boolean
+    M = (mask > 0).astype(np.uint8)
+    h, w = M.shape
+
+    heights = np.zeros(w, dtype=int)
+    best_area, best = 0, (0, 0, 0, 0)  # (top, left, bottom, right)
+
+    for r in range(h):
+        # Build histogram of consecutive 1s ending at this row
+        heights = (heights + 1) * M[r]  # reset to 0 where M[r] == 0
+
+        # Largest rectangle in histogram via monotonic stack
+        stack = []  # pairs: (col_index, start_col)
+        c = 0
+        while c <= w:
+            cur_h = heights[c] if c < w else 0
+            start = c
+            while stack and stack[-1][0] > cur_h:
+                height, start = stack.pop()
+                area = height * (c - start)
+                if area > best_area:
+                    top = r - height + 1
+                    left = start
+                    bottom = r
+                    right = c - 1
+                    best_area, best = area, (top, left, bottom, right)
+            stack.append((cur_h, start))
+            c += 1
+
+    return best
 
 if __name__ == '__main__':
     import os, glob, cv2
     from operations import preprocessing
     
-    dir_path = 'datasets/qsd2_w1'
+    dir_path = 'qsd2_w1'
     use_micro = True
     debug = False
 
@@ -207,31 +279,38 @@ if __name__ == '__main__':
         mask_groundtruth = cv2.imread(base + '.png', cv2.IMREAD_GRAYSCALE)
         
         image = cv2.cvtColor(image_raw, cv2.COLOR_BGR2Lab)
-        image = preprocessing.clahe_preprocessing(image, 'lab')
+        image = preprocessing.clahe_preprocessing(image, 'hsv')
 
-        mask = get_mask(image, 'lab')
+        mask = get_mask(image, 'hsv')
 
+        t, l, b, r = largest_axis_aligned_rectangle(mask)
+        
+        result = np.zeros_like(mask)
+        result[t:b+1, l:r+1] = 255
+        
         image_name = os.path.basename(base)
         folder = 'results'
 
         cv2.imwrite(os.path.join(folder, f"{image_name}_img.jpg"), image_raw)
-        cv2.imwrite(os.path.join(folder, f"{image_name}_output_mask.png"), mask)
+        cv2.imwrite(os.path.join(folder, f"{image_name}_output_mask.png"), result)
         cv2.imwrite(os.path.join(folder, f"{image_name}_annotation.png"), mask_groundtruth)
 
         mask_groundtruth = (mask_groundtruth > 127).astype(np.uint8)
-        mask = (mask > 127).astype(np.uint8)
+        result = (result > 127).astype(np.uint8)
 
-        TP = np.sum((mask_groundtruth == 1) & (mask == 1))
-        FP = np.sum((mask_groundtruth == 0) & (mask == 1))
-        FN = np.sum((mask_groundtruth == 1) & (mask == 0))
+        TP = np.sum((mask_groundtruth == 1) & (result == 1))
+        FP = np.sum((mask_groundtruth == 0) & (result == 1))
+        FN = np.sum((mask_groundtruth == 1) & (result == 0))
 
         precision_i = TP / (TP + FP + 1e-8)
         recall_i = TP / (TP + FN + 1e-8)
         f1_i = 2 * precision_i * recall_i / (precision_i + recall_i + 1e-8)
 
-        print(precision_i)
-        print(recall_i)
-        print(f1_i)
+        print(f'Image: {image_path}')
+        print(f'Precision: {precision_i}')
+        print(f'Recall: {recall_i}')
+        print(f'F1: {f1_i}')
+
         if precision_i < 0.5:
             print(f'{image_path} has less than 50 precision: {precision_i}') 
         if recall_i < 0.5:
@@ -248,16 +327,15 @@ if __name__ == '__main__':
     
     if use_micro:
         precision = TP_total / (TP_total + FP_total + 1e-8)
-        recall    = TP_total / (TP_total + FN_total + 1e-8)
-        f1        = 2 * precision * recall / (precision + recall + 1e-8)
+        recall = TP_total / (TP_total + FN_total + 1e-8)
+        f1 = 2 * precision * recall / (precision + recall + 1e-8)
     else:
         precision = float(np.mean(precision_list))
-        recall    = float(np.mean(recall_list))
-        f1        = float(np.mean(f1_list))
+        recall = float(np.mean(recall_list))
+        f1 = float(np.mean(f1_list))
 
     precisions_by_error.append(precision)
     recalls_by_error.append(recall)
     f1_by_error.append(f1)
-
 
 
