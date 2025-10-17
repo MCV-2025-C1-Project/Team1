@@ -1,4 +1,3 @@
-
 import argparse
 import glob
 import itertools
@@ -7,16 +6,15 @@ import pickle
 import time
 
 import cv2
-import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
 
 import constants
 import database
-import operations.mask as mask
+import background.w2_mask as w2_mask
+from descriptors import histograms, preprocessing
 from metrics import average_precision
-from operations import histograms, preprocessing
 
 
 def parse_yaml(config):
@@ -137,8 +135,8 @@ def main():
             image = preprocessing.unsharp(image)
         
         if masking:
-            mask_frame = mask.get_mask(image, 'wowi')
-            top, left, bottom, right = mask.largest_axis_aligned_rectangle(mask_frame)
+            mask_frame = w2_mask.get_mask(image, 'wowi')
+            top, left, bottom, right = w2_mask.largest_axis_aligned_rectangle(mask_frame)
             image = image[top:bottom+1, left:right+1, ...]
         query_list.append(image)
     

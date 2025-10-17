@@ -11,9 +11,10 @@ import yaml
 from tqdm import tqdm
 
 import constants
+from descriptors import histograms
 import metrics.average_precision as average_precision
 from database import Database
-from operations import histograms, preprocessing
+from descriptors import preprocessing
 
 
 def parse_yaml(config):

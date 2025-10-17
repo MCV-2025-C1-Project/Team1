@@ -93,6 +93,8 @@ During the first week, our objective was to design an image descriptor and explo
 
 During the second week, our objective was to implement a new method for computing histograms by dividing images into blocks to calculate local histograms. Additionally, we received a new set of images that included backgrounds, and our task was to develop a method for background removal. Our approach consisted of estimating the average color of the background, isolating the largest connected component, filling the gaps within that component, and finally identifying the largest square region corresponding to the object of interest. With the background successfully removed using this mask, we were then able to process the images with backgrounds through the updated retrieval system.
 
+## Week 3
+
 ## Team Members
 This is the awesome team who collaborated in this project:
 * adriangt2001

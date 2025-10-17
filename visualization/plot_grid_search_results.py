@@ -1,8 +1,10 @@
 import os
 import sys
-import pandas as pd
+
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.lines import Line2D  # added
+
 
 def main(csv_path="grid_search_results.csv", output_dir="plots", show=True):  # added show parameter
     if not os.path.isfile(csv_path):

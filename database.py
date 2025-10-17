@@ -7,7 +7,7 @@ import numpy as np
 
 import constants
 import metrics.distances as distances
-from operations import histograms, preprocessing
+from descriptors import histograms, preprocessing
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
