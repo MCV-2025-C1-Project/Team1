@@ -8,7 +8,7 @@ def denoise_image(
     image: np.ndarray, mode: str,
     kernel_size: int = 3, sigma: float = 1,
     nlm_h: float = 10, nlm_hcolor: float = 10, nlm_template_window_size: int = 7, nlm_search_window_size: int = 21, 
-    wavelet: str = 'bior1.3', wavelet_threshold: float = 0.5, wavelet_mode: 'str' = 'soft'
+    wavelet: str = 'bior1.3', wavelet_threshold: float = 0.5, wavelet_mode: str = 'soft'
 ) -> np.ndarray:
     """
     Removes noise from an image.
@@ -65,22 +65,37 @@ def denoise_image(
     elif mode == 'nlm':
         denoised_image = cv2.fastNlMeansDenoisingColored(image, dst=None, h=nlm_h, hColor=nlm_hcolor, templateWindowSize=nlm_template_window_size, searchWindowSize=nlm_search_window_size)
     elif mode == 'wavelets':
-        coefs = pywt.dwt2(image, wavelet)
-        coefs = pywt.threshold(coefs, wavelet_threshold, mode=wavelet_mode)
-        denoised_image = pywt.idwt2(coefs, wavelet,)
+        if image.dtype == np.uint8:
+            float_image = image.astype(np.float64) / 255
+        else:
+            float_image = image
+        H, W, C = float_image.shape
+        if H % 2 != 0 or W % 2 != 0:
+            float_image = cv2.copyMakeBorder(float_image, 0, H%2, 0, W%2, borderType=cv2.BORDER_REFLECT)
+
+        cA, (cH, cV, cD) = pywt.dwt2(float_image, wavelet, axes=[0, 1])
+        cH = pywt.threshold(cH, wavelet_threshold, mode=wavelet_mode)
+        cV = pywt.threshold(cV, wavelet_threshold, mode=wavelet_mode)
+        cD = pywt.threshold(cD, wavelet_threshold, mode=wavelet_mode)
+        denoised_image = pywt.idwt2((cA, (cH, cV, cD)), wavelet, axes=[0, 1])
+
+        denoised_image = denoised_image[:H, :W, ...]
+
+        if image.dtype == np.uint8:
+            denoised_image = (denoised_image * 255).astype(np.uint8)
     else:
         raise ValueError(f"Mode not implemented, choose one of {METHODS}")
+    
     return denoised_image
 
 if __name__ == '__main__':
-    image = cv2.imread('datasets/qsd1_w3/00023.jpg')
+    image = cv2.imread('datasets/qsd1_w3/00005.jpg')
     cv2.imshow('Original Image', image)
     cv2.waitKey(0)
 
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
-    denoised_image = denoise_image(image, 5, 'gaussian', sigma=2)
+    for mode in METHODS:
+        denoised_image = denoise_image(image, mode)
+        cv2.imshow(f'Denoised by {mode}', denoised_image)
+        cv2.waitKey(0)
 
-
-    denoised_image = cv2.cvtColor(denoised_image, cv2.COLOR_Lab2BGR)
-    cv2.imshow('Denoised Image', denoised_image)
-    cv2.waitKey(0)
+    
