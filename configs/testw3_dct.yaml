@@ -1,0 +1,18 @@
+data:
+  database_path: ../BBDD/
+  query_path: ../qsd1_w3/
+
+retrieval:
+  color_space_list: [lab]
+  preprocesses_list: [clahe]
+  
+  descriptor: DCT
+  blocks_list: [4]
+  DCT_coeffs: 16
+  distances_list: [canberra]
+
+  k_list: [1]
+
+evaluation:
+  val: true
+

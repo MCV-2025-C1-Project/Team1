@@ -7,7 +7,7 @@ import numpy as np
 
 import constants
 import metrics.distances as distances
-from descriptors import histograms, preprocessing
+from descriptors import histograms, preprocessing, DCT, LBP
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -112,7 +112,7 @@ class Database:
     debug : bool
         Debug flag.
     """
-    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy: bool = False, debug: bool = False):
+    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy: bool = False, descriptor: str = "hist", scales = (8,1.0), dct_coeffs: int = 16, oclbp_uniform_u2: bool = False, debug: bool = False):
         self.color_space = color_space
         self.preprocess = preprocess
 
@@ -120,6 +120,11 @@ class Database:
         self.num_blocks = num_blocks
         self.hist_dims = hist_dims
         self.hierarchy = hierarchy
+
+        self.descriptor = descriptor
+        self.scales = scales
+        self.dct_coeffs = dct_coeffs
+        self.oclbp_uniform_u2 = oclbp_uniform_u2
 
         self.debug = debug
         
@@ -233,7 +238,7 @@ class Database:
         
         return image 
 
-    def __compute_histogram(self, image: np.ndarray):
+    def __compute_histogram(self, image: np.ndarray, descriptor: str):
         """
         Compute an L1-normalized histogram for a grayscale or color image.
 
@@ -244,6 +249,9 @@ class Database:
         image : numpy.ndarray
             2D (grayscale) or 3D (H, W, C) uint8 image.
 
+        descriptor:  str
+            hist, LBP, Multiscale_LBP, OCLBP, DCT, wavelet
+
         Returns
         -------
         numpy.ndarray
@@ -251,10 +259,22 @@ class Database:
             For multi-channel images, shape is ``(bins * C,)`` where ``C`` is
             the number of channels in ``image``.
         """
-        if self.hierarchy:
-            hist = histograms.gen_hist_hier(image, self.bins, self.num_blocks, self.hist_dims)
+        
+        if self.descriptor == "LBP":
+            hist = LBP.get_LBP_hist(image, self.bins, self.num_blocks)
+        elif self.descriptor == "Multiscale_LBP":
+            hist = LBP.get_Multiscale_LBP_hist(image, self.bins, self.num_blocks, self.scales)
+        elif self.descriptor == "OCLBP":
+            hist = LBP.get_OCLBP_hist(image, self.bins, self.num_blocks, self.scales[0], self.scales[1], use_uniform_u2=self.oclbp_uniform_u2)
+        elif self.descriptor == "DCT":
+            hist = DCT.get_DCT_descriptor(image, self.num_blocks, coeffs=self.dct_coeffs) #tho not really a hist
+        elif self.descriptor == "wavelet":
+            pass #TU CODIGO
         else:
-            hist = histograms.gen_hist(image, self.bins, self.num_blocks, self.hist_dims)
+            if self.hierarchy:
+                hist = histograms.gen_hist_hier(image, self.bins, self.num_blocks, self.hist_dims)
+            else:
+                hist = histograms.gen_hist(image, self.bins, self.num_blocks, self.hist_dims)
         return hist
     
     def __preprocess_image(self, image):
@@ -344,17 +364,20 @@ class Database:
             processed_image = self.__preprocess_image(processed_image)
             
             self.images[idx] = processed_image
-        self.histograms = np.asarray([self.__compute_histogram(image) for image in self.images])
+        self.histograms = np.asarray([self.__compute_histogram(image, self.descriptor) for image in self.images])
 
-    def change_hist(self, bins, num_blocks, hist_dims):
+    def change_hist(self, bins, num_blocks, hist_dims, descriptor, scale = None, coeffs = None):
         """
-        Update the number of histogram bins and recompute all histograms.
+        Update the number of histogram bins or descriptor type and recompute all images.
 
         Parameters
         ----------
         bins : int
             New number of bins per channel used for histogram computation.
 
+        descriptor:  str
+            hist, LBP, Multiscale_LBP, OCLBP, DCT, wavelet
+            
         Returns
         -------
         None
@@ -363,13 +386,18 @@ class Database:
         -----
         Only histograms are recomputed; images (and preprocessing) are left untouched.
         """
-        if self.bins == bins and self.num_blocks == num_blocks and self.hist_dims == hist_dims: return
+        if self.bins == bins and self.num_blocks == num_blocks and self.hist_dims == hist_dims and self.descriptor == descriptor: return
 
         self.bins = bins
         self.num_blocks = num_blocks
         self.hist_dims = hist_dims
-        
-        self.histograms = np.asarray([self.__compute_histogram(image) for image in self.images])
+
+        self.descriptor = descriptor
+        if scale != None:
+            self.scale = scale
+        if coeffs != None:
+            self.dct_coeffs = coeffs
+        self.histograms = np.asarray([self.__compute_histogram(image, self.descriptor) for image in self.images])
 
     def get_top_k_similar_images(self, img_hist, distance_metric, weights=None, ensemble_method: str = "score"):
         """

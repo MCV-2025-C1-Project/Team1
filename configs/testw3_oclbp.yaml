@@ -1,0 +1,22 @@
+data:
+  database_path: ../BBDD/
+  query_path: ../qsd1_w3/non_augmented/
+
+retrieval:
+  color_space_list: [lab]
+  preprocesses_list: [clahe]
+  
+  descriptor: OCLBP
+  bins_list: [16]
+  blocks_list: [2]
+  LBP_scales:
+    - [4, 1]
+    
+  OCLBP_uniform_u2: false
+  distances_list: [x2]
+
+  k_list: [1]
+
+evaluation:
+  val: true
+
