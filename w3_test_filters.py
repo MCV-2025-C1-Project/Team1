@@ -220,7 +220,7 @@ def main():
                 for hcolor in nlm_hcolor:
                     for template_window_size in nlm_template_window_size:
                         for search_window_size in nlm_search_window_size:
-                            params = {'h': h, 'hcolor': hcolor, 'template_window_size': template_window_size, 'search_window_size': search_window_size}
+                            params = {'nlm_h': h, 'nlm_hcolor': hcolor, 'nlm_template_window_size': template_window_size, 'nlm_search_window_size': search_window_size}
                     
                             mse, psnr, ssim = denoise_with_metrics(dataset_list, gt_list, mode, params)
 
@@ -240,7 +240,7 @@ def main():
                 for wavelet in pywt.wavelist(family=wavelet_family, kind='discrete'):
                     for threshold in wavelet_threshold:
                         for threshold_mode in wavelet_mode:
-                            params = {'wavelet': wavelet, 'threshold': threshold, 'threshold_mode': threshold_mode}
+                            params = {'wavelet': wavelet, 'wavelet_threshold': threshold, 'wavelet_mode': threshold_mode}
 
                             mse, psnr, ssim = denoise_with_metrics(dataset_list, gt_list, mode, params)
 
@@ -252,19 +252,22 @@ def main():
                                 best_ssim = (params, mse, psnr, ssim)
         
         results_mse.append({
-            **best_mse,
+            'method': mode,
+            **best_mse[0],
             'mse': best_mse[1],
             'psnr': best_mse[2],
             'ssim': best_mse[3],
         })
         results_psnr.append({
-            **best_psnr,
+            'method': mode,
+            **best_psnr[0],
             'mse': best_psnr[1],
             'psnr': best_psnr[2],
             'ssim': best_psnr[3],
         })
         results_ssim.append({
-            **best_ssim,
+            'method': mode,
+            **best_ssim[0],
             'mse': best_ssim[1],
             'psnr': best_ssim[2],
             'ssim': best_ssim[3],
@@ -274,7 +277,7 @@ def main():
     results_psnr = pd.DataFrame(results_psnr)
     results_ssim = pd.DataFrame(results_ssim)
     results = pd.concat([results_mse, results_psnr, results_ssim])
-    results.to_csv('results/w3/results_filters.csv')
+    results.to_csv('results/w3/results_filters_qsd2.csv')
 
 if __name__ == '__main__':
     main()
