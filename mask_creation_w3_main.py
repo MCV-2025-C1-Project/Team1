@@ -497,7 +497,7 @@ def process_single_image(image_path: str,
     print(n)
 
     mask = np.zeros((H, W), dtype=np.uint8)
-
+    quads = []
     if n == 1:
         edges_f = np.apply_along_axis(fill_short_zero_runs, axis=1, arr=edges)
         edges_f = np.apply_along_axis(fill_short_zero_runs, axis=0, arr=edges_f)
@@ -514,7 +514,7 @@ def process_single_image(image_path: str,
 
         # overlayed = overlay_mask_on_image(original_img, mask, color=(0, 0, 255), alpha=0.4)
         # cv2.imwrite(out_path.replace('.png', '_overlay.png'), overlayed)
-
+        quads.append(new_quad)
     elif n == 2:
         # Select two largest components
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(1.5 * H // 20)))
@@ -567,7 +567,8 @@ def process_single_image(image_path: str,
         cv2.imwrite(out_path, mask)
         # overlayed = overlay_mask_on_image(original_img, mask, color=(0, 0, 255), alpha=0.4)
         # cv2.imwrite(out_path.replace('.png', '_overlay.png'), overlayed)
-
+        quads.append(quad1)
+        quads.append(quad2)
     # Evaluation block (optional)
     metrics = None
     if evaluate:
@@ -584,7 +585,7 @@ def process_single_image(image_path: str,
             f1_i        = 2 * precision_i * recall_i / (precision_i + recall_i + 1e-8)
             metrics = dict(TP=TP, FP=FP, FN=FN,
                            precision=precision_i, recall=recall_i, f1=f1_i)
-    return n, mask, metrics
+    return n, mask, metrics, quads
 
 
 def process_dataset(path: str = DEFAULT_PATH,
@@ -597,9 +598,13 @@ def process_dataset(path: str = DEFAULT_PATH,
     n_x_img = []
     TP_total = FP_total = FN_total = 0
     precision_list, recall_list, f1_list = [], [], []
+    masks = []
+    quads = []
 
     for image_path in glob.iglob(os.path.join(path, '*.jpg')):
-        n, mask, metrics = process_single_image(image_path, out_dir, evaluate=evaluate, show=show)
+        n, mask, metrics, quad = process_single_image(image_path, out_dir, evaluate=evaluate, show=show)
+        masks.append(mask)
+        quads.append(quad)
         print(f'Image: {image_path} has {n} pictures')
         n_x_img.append(n)
 
@@ -628,7 +633,7 @@ def process_dataset(path: str = DEFAULT_PATH,
             if n_gt != n_pred:
                 print(f'Image {i} has gt {n_gt} but labeled as {n_pred}')
 
-    return n_x_img
+    return masks, quads
 
 
 def overlay_mask_on_image(image: np.ndarray, mask: np.ndarray, color=(0, 255, 0), alpha=0.5) -> np.ndarray:
@@ -678,7 +683,7 @@ def main():
         elif arg == "--macro":
             use_micro = False
 
-    process_dataset(path=path,
+    masks, quads = process_dataset(path=path,
                     out_dir="./results",
                     evaluate=evaluate,
                     show=show,
