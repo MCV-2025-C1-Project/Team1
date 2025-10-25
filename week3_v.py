@@ -220,7 +220,7 @@ def main():
     query_list_raw = []
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         img_bgr = cv2.imread(image_path)
-        query_list_raw.append(img_bgr)
+        query_list_raw.append(filters.denoise_image(img_bgr, 'median', kernel_size=3))
 
     # Collect every run (params + results) to pickle together
     all_runs = []
@@ -399,11 +399,11 @@ def main():
                         run_record["mapk_list"] = mapk_list
                     all_runs.append(run_record)
 
-                    pbar.update(1)
+                pbar.update(1)
 
     if val:
         os.makedirs('./results', exist_ok=True)
-        grid_search_df.to_csv('results/grid_search_results_w3_1.csv', index=False)
+        grid_search_df.to_csv('results/grid_search_results_w3_wavelets_clean.csv', index=False)
         for config, results, mapk, k in zip(best_config, best_result, best_mapk, k_list):
             print(f"\nFor K = {k}\n")
             print(f"Best results: {results}")

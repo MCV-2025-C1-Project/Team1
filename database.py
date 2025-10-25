@@ -7,7 +7,7 @@ import numpy as np
 
 import constants
 import metrics.distances as distances
-from descriptors import histograms, preprocessing, DCT, LBP, wavelets
+from descriptors import histograms, preprocessing, DCT, LBP, wavelets, filters
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -196,7 +196,7 @@ class Database:
                 pass
 
             self.image_paths.append(jpg_file)
-            self.images_raw.append(image)
+            self.images_raw.append(filters.denoise_image(image, 'median', kernel_size=3))
             self.images.append(None)
             self.histograms.append(None)
 
