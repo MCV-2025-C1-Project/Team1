@@ -495,7 +495,7 @@ def process_single_image(image_path: str,
 
     n = get_n_pictures(image_lab)
     print(n)
-
+    masks = []
     mask = np.zeros((H, W), dtype=np.uint8)
     quads = []
     if n == 1:
@@ -515,6 +515,7 @@ def process_single_image(image_path: str,
         # overlayed = overlay_mask_on_image(original_img, mask, color=(0, 0, 255), alpha=0.4)
         # cv2.imwrite(out_path.replace('.png', '_overlay.png'), overlayed)
         quads.append(new_quad)
+        masks.append(mask)
     elif n == 2:
         # Select two largest components
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(1.5 * H // 20)))
@@ -560,6 +561,8 @@ def process_single_image(image_path: str,
         quad2 = process_shadows(mask2, axis=0, original_img=original_img, show=show)
         mask2 = quads_to_mask(quad2, (H, W))
 
+        masks.append(mask1)
+        masks.append(mask2)
         print(quad1)
         print(quad2)
 
