@@ -6,7 +6,7 @@ retrieval:
   color_space_list: [lab, hsv]
   preprocesses_list: ['', clahe]
 
-  descriptors_list: [OCLBP]
+  descriptors_list: [wavelet]
   bins_list: [16]
   blocks_list: [4]
   hist_dims_list: [1]            

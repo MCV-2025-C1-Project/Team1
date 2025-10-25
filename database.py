@@ -7,7 +7,7 @@ import numpy as np
 
 import constants
 import metrics.distances as distances
-from descriptors import histograms, preprocessing, DCT, LBP
+from descriptors import histograms, preprocessing, DCT, LBP, wavelets
 
 
 def save_histogram_jpg(hist: np.ndarray, out_path: str, bins_per_channel: int = 64):
@@ -112,7 +112,7 @@ class Database:
     debug : bool
         Debug flag.
     """
-    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy: bool = False, descriptor: str = "hist", scales = (8,1.0), dct_coeffs: int = 16, oclbp_uniform_u2: bool = False, debug: bool = False):
+    def __init__(self, path: str, color_space: constants.COLOR_SPACES='rgb', preprocess=None, bins: int = 64, num_blocks: int = 1, hist_dims: int = 1, hierarchy: bool = False, descriptor: str = "hist", scales = (8,1.0), dct_coeffs: int = 16, oclbp_uniform_u2: bool = False, wavelet: str = "bior1.1", debug: bool = False):
         self.color_space = color_space
         self.preprocess = preprocess
 
@@ -125,6 +125,7 @@ class Database:
         self.scales = scales
         self.dct_coeffs = dct_coeffs
         self.oclbp_uniform_u2 = oclbp_uniform_u2
+        self.wavelet = wavelet
 
         self.debug = debug
         
@@ -269,7 +270,7 @@ class Database:
         elif self.descriptor == "DCT":
             hist = DCT.get_DCT_descriptor(image, self.num_blocks, coeffs=self.dct_coeffs) #tho not really a hist
         elif self.descriptor == "wavelet":
-            pass #TU CODIGO
+            hist = wavelets.wavelets_descriptor(image, self.wavelet, bins = self.bins, num_windows=self.num_blocks, num_dimensions=self.hist_dims)
         else:
             if self.hierarchy:
                 hist = histograms.gen_hist_hier(image, self.bins, self.num_blocks, self.hist_dims)
@@ -366,38 +367,48 @@ class Database:
             self.images[idx] = processed_image
         self.histograms = np.asarray([self.__compute_histogram(image, self.descriptor) for image in self.images])
 
-    def change_hist(self, bins, num_blocks, hist_dims, descriptor, scale = None, coeffs = None):
+    def change_hist(self, bins, num_blocks, hist_dims, descriptor, scale=None, coeffs=None, wavelet=None):
         """
-        Update the number of histogram bins or descriptor type and recompute all images.
-
-        Parameters
-        ----------
-        bins : int
-            New number of bins per channel used for histogram computation.
-
-        descriptor:  str
-            hist, LBP, Multiscale_LBP, OCLBP, DCT, wavelet
-            
-        Returns
-        -------
-        None
-
-        Notes
-        -----
-        Only histograms are recomputed; images (and preprocessing) are left untouched.
+        Update histogram/descriptor parameters and recompute DB descriptors if needed.
         """
-        if self.bins == bins and self.num_blocks == num_blocks and self.hist_dims == hist_dims and self.descriptor == descriptor: return
+        need_recompute = False
 
+        # Detect changes in the core params
+        if (self.bins != bins) or (self.num_blocks != num_blocks) or (self.hist_dims != hist_dims) or (self.descriptor != descriptor):
+            need_recompute = True
+
+        # Apply descriptor-specific params; mark recompute if they change
+        # Scales for Multiscale LBP / OCLBP
+        if descriptor in ("Multiscale_LBP", "OCLBP"):
+            if scale is not None:
+                # normalize to a comparable form
+                if self.scales != scale:
+                    self.scales = scale
+                    need_recompute = True
+
+        # DCT coefficients for DCT
+        if descriptor == "DCT":
+            if coeffs is not None and coeffs != self.dct_coeffs:
+                self.dct_coeffs = coeffs
+                need_recompute = True
+
+        if descriptor == "wavelet":
+            if wavelet is not None and wavelet != self.wavelet:
+                self.wavelet = wavelet
+                need_recompute = True
+
+        # Now set the core params (after we compared)
         self.bins = bins
         self.num_blocks = num_blocks
         self.hist_dims = hist_dims
-
         self.descriptor = descriptor
-        if scale != None:
-            self.scale = scale
-        if coeffs != None:
-            self.dct_coeffs = coeffs
+
+        if not need_recompute:
+            return
+
+        # Recompute DB descriptors
         self.histograms = np.asarray([self.__compute_histogram(image, self.descriptor) for image in self.images])
+
 
     def get_top_k_similar_images(self, img_hist, distance_metric, weights=None, ensemble_method: str = "score"):
         """

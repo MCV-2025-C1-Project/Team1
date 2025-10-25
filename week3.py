@@ -15,7 +15,7 @@ from tqdm import tqdm
 import constants
 import database
 import background.w2_mask as w2_mask
-from descriptors import histograms, preprocessing, LBP, DCT
+from descriptors import histograms, preprocessing, LBP, DCT, filters, wavelets
 from metrics import average_precision
 
 
@@ -71,7 +71,7 @@ def parse_args():
     parser.add_argument('--masking', type=bool, default=False,
                         help='Whether to remove the background by getting a mask.')
     
-    parser.add_argument('--descriptor', type=str, default='hist',
+    parser.add_argument('--descriptors_list', type=str, nargs='+', default=['hist'],
                         help='Image descriptor. Options: hist, LBP, Multiscale_LBP, OCLBP, DCT, wavelet. (Default: [hist])')
     
     parser.add_argument('--bins_list', type=int, nargs='+', default=[64],
@@ -80,7 +80,7 @@ def parse_args():
                         help="Number of blocks to divide the image into")
     parser.add_argument('--hist_dims_list', nargs='+', type=int, default=[1],
                         help='Number of dimensions of the histogram')
-    parser.add_argument('--LBP_scales', type=eval, default=(8,1.0),
+    parser.add_argument('--LBP_scales_list', type=eval, nargs='+', default=[(8,1.0)],
                         help=(
                             "LBP scale(s). For LBP or OCLBP pass a single tuple like (P,R). "
                             "For Multiscale LBP pass a list of tuples like [(P1,R1),(P2,R2),...]. "
@@ -91,7 +91,7 @@ def parse_args():
     parser.add_argument('--OCLBP_uniform_u2', type=bool, default=False,
                         help=("if True use uniform-u2 mapping -> bins = P + 2 per scale"
                               "else: bins. Options: True / False. (Default: False)"))
-    parser.add_argument('--DCT_coeffs',  type=int, default=16,
+    parser.add_argument('--DCT_coeffs_list',  nargs='+', type=int, default=[16],
                         help='Number of DCT coefficients to keep per block (taken in zig-zag)')
     
     parser.add_argument('--distances_list', nargs='+', type=str, default=['hist_intersection'],
@@ -123,22 +123,25 @@ def main():
     preprocesses_list = args.preprocesses_list
     masking = args.masking
 
-    descriptor = args.descriptor
+    descriptors_list = args.descriptors_list
     bins_list = args.bins_list
     blocks_list = args.blocks_list
 
     hist_dims_list = args.hist_dims_list
-    raw = args.LBP_scales
+    LBP_scales_list = args.LBP_scales_list
 
+
+    """
     if descriptor == "Multiscale_LBP": 
         # ensure a list of (P,R) tuples
         scales = raw if isinstance(raw, list) else [raw]
     else:
         # ensure a single (P,R) tuple
         scales = raw if isinstance(raw, tuple) else raw[0]
+    """
 
     uniform_u2 = args.OCLBP_uniform_u2
-    DCT_coeffs = args.DCT_coeffs
+    DCT_coeffs_list = args.DCT_coeffs_list
 
     distances_list = args.distances_list
 
@@ -153,12 +156,12 @@ def main():
         best_config = [[] for _ in range(len(k_list))]
         best_result = [[] for _ in range(len(k_list))]
         best_mapk = [0 for _ in range(len(k_list))]
-        grid_search_df = pd.DataFrame(columns=['color_space', 'preprocess', 'bins', 'blocks', 'hist_dim', 'distances', *[f'mapk{k}' for k in k_list]])
+        grid_search_df = pd.DataFrame(columns=['descriptor', 'color_space', 'preprocess', 'bins', 'blocks', 'hist_dim', 'distances', *[f'mapk{k}' for k in k_list]])
         
         with open(os.path.join(query_path, 'gt_corresps.pkl'), 'rb') as f:
             groundtruth = pickle.load(f)
     
-    db = database.Database(db_path, color_space=color_space, preprocess=preprocess, bins=bins_list[0], num_blocks=blocks_list[0], hist_dims=hist_dims_list[0], descriptor=descriptor, scales=scales, dct_coeffs=DCT_coeffs, oclbp_uniform_u2=uniform_u2)
+    db = database.Database(db_path, color_space=color_space, preprocess=preprocess, bins=bins_list[0], num_blocks=blocks_list[0], hist_dims=hist_dims_list[0], descriptor=descriptors_list[0], scales=LBP_scales_list[0], dct_coeffs=DCT_coeffs_list[0], oclbp_uniform_u2=uniform_u2)
      
     query_abs_path = os.path.abspath(query_path)
     query_pattern = os.path.join(query_abs_path, '*.jpg')
@@ -204,7 +207,7 @@ def main():
                 pbar.update(len(distances_list))
                 continue
 
-            db.change_hist(bins, blocks, hist_dims, descriptor)
+            db.change_hist(bins, blocks, hist_dims, descriptor_list[0])
             for distance in distances_list:
                 results = [[] for _ in k_list]
                 for idx, query in enumerate(query_list):

@@ -729,7 +729,5 @@ def get_OCLBP_hist(image,
 
     # Concatenate all tile histograms across channels into a single descriptor
     desc = np.concatenate(all_hists, axis=0)
-    # Lightweight debug summary (optional)
-    print("OCLBP len:", desc.size, "min/max:", float(desc.min()), float(desc.max()), "L1:", float(desc.sum()))
     return desc
 
