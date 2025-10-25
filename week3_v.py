@@ -228,23 +228,23 @@ def main():
     # Descriptor-aware grid search
     for descriptor_ in descriptors_list:
         if descriptor_ == "hist":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, bins_list, blocks_list, hist_dims_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(bins_list)*len(blocks_list)*len(hist_dims_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, bins_list, blocks_list, hist_dims_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(bins_list)*len(blocks_list)*len(hist_dims_list))
         elif descriptor_ == "LBP":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, bins_list, blocks_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(bins_list)*len(blocks_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, bins_list, blocks_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(bins_list)*len(blocks_list))
         elif descriptor_ == "Multiscale_LBP":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, bins_list, blocks_list, LBP_scales_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(bins_list)*len(blocks_list)*len(LBP_scales_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, bins_list, blocks_list, LBP_scales_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(bins_list)*len(blocks_list)*len(LBP_scales_list))
         elif descriptor_ == "OCLBP":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, bins_list, blocks_list, LBP_scales_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(bins_list)*len(blocks_list)*len(LBP_scales_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, bins_list, blocks_list, LBP_scales_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(bins_list)*len(blocks_list)*len(LBP_scales_list))
         elif descriptor_ == "DCT":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, blocks_list, DCT_coeffs_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(blocks_list)*len(DCT_coeffs_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, blocks_list, DCT_coeffs_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(blocks_list)*len(DCT_coeffs_list))
         elif descriptor_ == "wavelet":
-            combos = itertools.product(color_spaces_list, preprocesses_list, distances_list, bins_list, blocks_list, hist_dims_list, wavelets_list)
-            total = (len(color_spaces_list)*len(preprocesses_list)*len(distances_list)*len(bins_list)*len(blocks_list)*len(hist_dims_list)*len(wavelets_list))
+            combos = itertools.product(color_spaces_list, preprocesses_list, bins_list, blocks_list, hist_dims_list, wavelets_list)
+            total = (len(color_spaces_list)*len(preprocesses_list)*len(bins_list)*len(blocks_list)*len(hist_dims_list)*len(wavelets_list))
         else:
             raise ValueError(f"Unknown descriptor: {descriptor_}")
 
@@ -258,28 +258,27 @@ def main():
                 bins = None
                 blocks = None
                 hist_dims = None
-                distance = None
 
                 if descriptor_ == "hist":
-                    color_space, preprocess, distance, bins, blocks, hist_dims = combo
+                    color_space, preprocess, bins, blocks, hist_dims = combo
                 elif descriptor_ == "LBP":
-                    color_space, preprocess, distance, bins, blocks = combo
+                    color_space, preprocess, bins, blocks = combo
                 elif descriptor_ == "Multiscale_LBP":
-                    color_space, preprocess, distance, bins, blocks, scales_ = combo
+                    color_space, preprocess, bins, blocks, scales_ = combo
                     # Ensure list-of-tuples
                     scales_ = scales_ if (isinstance(scales_, list) and len(scales_) and isinstance(scales_[0], (list, tuple))) else [scales_]
                 elif descriptor_ == "OCLBP":
-                    color_space, preprocess, distance, bins, blocks, pr_tuple = combo
+                    color_space, preprocess, bins, blocks, pr_tuple = combo
                     P_, R_ = pr_tuple
                 elif descriptor_ == "DCT":
-                    color_space, preprocess, distance, blocks, coeffs_ = combo
+                    color_space, preprocess, blocks, coeffs_ = combo
                 elif descriptor_ == "wavelet":
-                    color_space, preprocess, distance, bins, blocks, hist_dims, wavelet = combo
+                    color_space, preprocess, bins, blocks, hist_dims, wavelet = combo
 
                 # Optional skip for heavy hist configs
                 if descriptor_ == "hist":
                     if (hist_dims == 2 and (bins > 64 or blocks > 16)) or (hist_dims == 3 and (bins > 32 or blocks > 8)):
-                        pbar.set_postfix({"desc": descriptor_, "cs": color_space, "pp": preprocess, "bins": bins, "blocks": blocks, "hD": hist_dims, "dist": distance, "skip": True})
+                        pbar.set_postfix({"desc": descriptor_, "cs": color_space, "pp": preprocess, "bins": bins, "blocks": blocks, "hD": hist_dims, "skip": True})
                         pbar.update(1)
                         continue
 
@@ -305,101 +304,102 @@ def main():
 
 
                 # Retrieve for all queries
-                results = [[] for _ in k_list]
-                for q in current_queries:
-                    start_time = time.time()
+                for distance in distances_list:
+                    results = [[] for _ in k_list]
+                    for q in current_queries:
+                        start_time = time.time()
 
-                    if descriptor_ == "hist":
-                        desc = histograms.gen_hist(q, bins, blocks, hist_dims)
-                    elif descriptor_ == "LBP":
-                        desc = LBP.get_LBP_hist(q, bins, blocks)
-                    elif descriptor_ == "Multiscale_LBP":
-                        desc = LBP.get_Multiscale_LBP_hist(q, bins, blocks, scales_)
-                    elif descriptor_ == "OCLBP":
-                        desc = LBP.get_OCLBP_hist(q, bins, blocks, P_, R_, use_uniform_u2=uniform_u2)
-                    elif descriptor_ == "DCT":
-                        desc = DCT.get_DCT_descriptor(q, blocks, coeffs=coeffs_)
-                    elif descriptor_ == "wavelet":
-                        desc = wavelets.wavelets_descriptor(q, wavelet=wavelet, bins=bins, num_windows=blocks, num_dimensions=hist_dims)
+                        if descriptor_ == "hist":
+                            desc = histograms.gen_hist(q, bins, blocks, hist_dims)
+                        elif descriptor_ == "LBP":
+                            desc = LBP.get_LBP_hist(q, bins, blocks)
+                        elif descriptor_ == "Multiscale_LBP":
+                            desc = LBP.get_Multiscale_LBP_hist(q, bins, blocks, scales_)
+                        elif descriptor_ == "OCLBP":
+                            desc = LBP.get_OCLBP_hist(q, bins, blocks, P_, R_, use_uniform_u2=uniform_u2)
+                        elif descriptor_ == "DCT":
+                            desc = DCT.get_DCT_descriptor(q, blocks, coeffs=coeffs_)
+                        elif descriptor_ == "wavelet":
+                            desc = wavelets.wavelets_descriptor(q, wavelet=wavelet, bins=bins, num_windows=blocks, num_dimensions=hist_dims)                    
+                        
+                        order = db.get_top_k_similar_images(desc, distance)
+                        for i, k in enumerate(k_list):
+                            results[i].append(order[:k])
 
-                    order = db.get_top_k_similar_images(desc, distance)
-                    for i, k in enumerate(k_list):
-                        results[i].append(order[:k])
+                        # print(f"Elapsed time for image {time.time() - start_time:.4f}s")
 
-                    # print(f"Elapsed time for image {time.time() - start_time:.4f}s")
+                    # Evaluate & bookkeeping
+                    if val:
+                        mapk_list = []
+                        for i_k, (result_k, k_val) in enumerate(zip(results, k_list)):
+                            mapk = average_precision.mapk(groundtruth, result_k, k=k_val)
+                            mapk_list.append(mapk)
 
-                # Evaluate & bookkeeping
-                if val:
-                    mapk_list = []
-                    for i_k, (result_k, k_val) in enumerate(zip(results, k_list)):
-                        mapk = average_precision.mapk(groundtruth, result_k, k=k_val)
-                        mapk_list.append(mapk)
+                            if mapk >= best_mapk[i_k]:
+                                extra = None
+                                if descriptor_ == "DCT":
+                                    extra = coeffs_
+                                elif descriptor_ == "wavelet":
+                                    extra = wavelet
+                                elif descriptor_ == "OCLBP":
+                                    extra = (P_, R_)
+                                elif descriptor_ == "Multiscale_LBP":
+                                    extra = scales_
 
-                        if mapk >= best_mapk[i_k]:
-                            extra = None
-                            if descriptor_ == "DCT":
-                                extra = coeffs_
-                            elif descriptor_ == "wavelet":
-                                extra = wavelet
-                            elif descriptor_ == "OCLBP":
-                                extra = (P_, R_)
-                            elif descriptor_ == "Multiscale_LBP":
-                                extra = scales_
+                                best_config[i_k] = [descriptor_, color_space, preprocess, bins, blocks, hist_dims, distance, extra]
+                                best_result[i_k] = results[i_k]
+                                best_mapk[i_k] = mapk
 
-                            best_config[i_k] = [descriptor_, color_space, preprocess, bins, blocks, hist_dims, distance, extra]
-                            best_result[i_k] = results[i_k]
-                            best_mapk[i_k] = mapk
-
-                    # Row for CSV
-                    row = {
-                        'descriptor': descriptor_,
-                        'color_space': color_space,
-                        'preprocess': preprocess,
-                        'bins': bins,
-                        'blocks': blocks,
-                        'hist_dim': hist_dims,
-                        'distances': distance,
-                        # new fields (None when not applicable)
-                        'lbp_scales': (
-                            scales_ if descriptor_ == "Multiscale_LBP"
-                            else ((P_, R_) if descriptor_ == "OCLBP" else None)
-                        ),
-                        'dct_coeffs': (coeffs_ if descriptor_ == "DCT" else None),
-                        'wavelet': (wavelet if descriptor_ == "wavelet" else None),
-                        **{f'mapk{k}': mapk_list[i] for i, k in enumerate(k_list)}
-                    }
-
-                    grid_search_df.loc[len(grid_search_df)] = row
-
-                    tqdm_post = {
-                        "desc": descriptor_, "cs": color_space, "pp": preprocess,
-                        "bins": bins, "blocks": blocks, "hD": hist_dims, "dist": distance
-                    }
-                    for i, k in enumerate(k_list):
-                        tqdm_post[f"MAP@{k}"] = f"{mapk_list[i]:.3f}"
-                    pbar.set_postfix(tqdm_post)
-
-                # Store this combo for unified pickle
-                run_record = {
-                            "descriptor": descriptor_,
-                            "color_space": color_space,
-                            "preprocess": preprocess,
-                            "distance": distance,
-                            "bins": bins,
-                            "blocks": blocks,
-                            "hist_dim": hist_dims,
-                            "coeffs": coeffs_ if descriptor_ == "DCT" else None,
-                            "scales": ([(P_, R_)] if descriptor_ == "OCLBP" else (scales_ if descriptor_ == "Multiscale_LBP" else None)),
-                            "wavelet": wavelet if descriptor_ == "wavelet" else None,   # ← add this
-                            "k_list": k_list,
-                            "results": results,
+                        # Row for CSV
+                        row = {
+                            'descriptor': descriptor_,
+                            'color_space': color_space,
+                            'preprocess': preprocess,
+                            'bins': bins,
+                            'blocks': blocks,
+                            'hist_dim': hist_dims,
+                            'distances': distance,
+                            # new fields (None when not applicable)
+                            'lbp_scales': (
+                                scales_ if descriptor_ == "Multiscale_LBP"
+                                else ((P_, R_) if descriptor_ == "OCLBP" else None)
+                            ),
+                            'dct_coeffs': (coeffs_ if descriptor_ == "DCT" else None),
+                            'wavelet': (wavelet if descriptor_ == "wavelet" else None),
+                            **{f'mapk{k}': mapk_list[i] for i, k in enumerate(k_list)}
                         }
 
-                if val:
-                    run_record["mapk_list"] = mapk_list
-                all_runs.append(run_record)
+                        grid_search_df.loc[len(grid_search_df)] = row
 
-                pbar.update(1)
+                        tqdm_post = {
+                            "desc": descriptor_, "cs": color_space, "pp": preprocess,
+                            "bins": bins, "blocks": blocks, "hD": hist_dims, "dist": distance
+                        }
+                        for i, k in enumerate(k_list):
+                            tqdm_post[f"MAP@{k}"] = f"{mapk_list[i]:.3f}"
+                        pbar.set_postfix(tqdm_post)
+
+                    # Store this combo for unified pickle
+                    run_record = {
+                                "descriptor": descriptor_,
+                                "color_space": color_space,
+                                "preprocess": preprocess,
+                                "distance": distance,
+                                "bins": bins,
+                                "blocks": blocks,
+                                "hist_dim": hist_dims,
+                                "coeffs": coeffs_ if descriptor_ == "DCT" else None,
+                                "scales": ([(P_, R_)] if descriptor_ == "OCLBP" else (scales_ if descriptor_ == "Multiscale_LBP" else None)),
+                                "wavelet": wavelet if descriptor_ == "wavelet" else None,   # ← add this
+                                "k_list": k_list,
+                                "results": results,
+                            }
+
+                    if val:
+                        run_record["mapk_list"] = mapk_list
+                    all_runs.append(run_record)
+
+                    pbar.update(1)
 
     if val:
         os.makedirs('./results', exist_ok=True)
