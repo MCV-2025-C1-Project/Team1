@@ -3,24 +3,19 @@ import cv2
 import numpy as np
 
 def divide_image(image, blocks: int):
-    num_dims = image.ndim
-    if num_dims == 2:
-        H, W = image.shape
-        image = image.reshape([H, W, 1])
     H, W, C = image.shape
     
     height_padding = blocks - (H % blocks)
     width_padding = blocks - (W % blocks)
 
     new_image = cv2.copyMakeBorder(image, 0, height_padding, 0, width_padding, cv2.BORDER_REFLECT)
+    num_dims = new_image.ndim
     if num_dims == 2:
         H, W, = new_image.shape
         new_image = new_image.reshape([H, W, 1])
     H, W, C = new_image.shape
 
     new_image = np.reshape(new_image, [blocks, H // blocks, blocks, W // blocks, C]).transpose([0, 2, 1, 3, 4]).reshape(-1, H // blocks, W // blocks, C)
-    if num_dims == 2:
-        new_image = new_image.reshape([-1, H // blocks, W // blocks])
     return new_image
 
 def gen_hist_old(image, hierarchy_levels: int, bins: int, hist_dim: int, hierarchy: bool):
@@ -86,6 +81,10 @@ def gen_hist_hier(image, bins, hierarchy, num_dimensions):
     return hists
 
 def gen_hist(image, bins, num_windows, num_dimensions):
+    num_dims = image.ndim
+    if num_dims == 2:
+        H, W = image.shape
+        image = image.reshape([H, W, 1])
     H, W, C = image.shape
     windowed_image = divide_image(image, num_windows)
     hists = []

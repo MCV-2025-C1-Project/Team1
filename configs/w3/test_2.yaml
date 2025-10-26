@@ -1,6 +1,6 @@
 data:
   database_path: datasets/BBDD/
-  query_path: datasets/qsd2_w3/
+  query_path: datasets/qst2_w3/
 
 retrieval:
   color_space_list: [gray_scale]
@@ -14,11 +14,11 @@ retrieval:
   DCT_coeffs_list: [16]
   
   distances_list: [canberra]
-  k_list: [1]
+  k_list: [10]
 
 evaluation:
   val: false
 
 output:
-  pickle_filename: 'results/w3_sample.pkl'
+  pickle_filename: 'results/w3/w3_sample_2.pkl'
 

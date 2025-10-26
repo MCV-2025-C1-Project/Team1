@@ -19,17 +19,21 @@ def apk(actual, predicted, k=10):
     return score / min(len(actual), k)
 
 
-def mapk(actual, predicted, k=10):
+def mapk(actual, predicted, k=10, multi=False):
     """
     Computes mean average precision at k for:
       - actual: list of lists (ground truth idx per image)
       - predicted: list of lists of lists (predicted idx per painting in each image)
     """
-    all_apks = []
+    if multi:
+        all_apks = []
 
-    for actual_img, predicted_img in zip(actual, predicted):
-        # For each painting in the image
-        for gt_idx, pred_list in zip(actual_img, predicted_img):
-            all_apks.append(apk([gt_idx], pred_list, k))  # wrap gt_idx as list
+        for actual_img, predicted_img in zip(actual, predicted):
+            # For each painting in the image
+            for gt_idx, pred_list in zip(actual_img, predicted_img):
+                all_apks.append(apk([gt_idx], pred_list, k))  # wrap gt_idx as list
 
-    return np.mean(all_apks) if all_apks else 0.0
+        return np.mean(all_apks) if all_apks else 0.0
+    else:
+        return np.mean([apk(a,p,k) for a,p in zip(actual, predicted)])
+    

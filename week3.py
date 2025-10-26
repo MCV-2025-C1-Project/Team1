@@ -78,6 +78,8 @@ def parse_args():
                                 in case of using a yaml file. Example terminal: [None, l1]. Example yaml: ['', euclidean]""")
     parser.add_argument('--masking', type=bool, default=False,
                         help='Whether to remove the background by getting a mask.')
+    parser.add_argument('--denoising', type=bool, default=False,
+                        help='Whether to remove the noise.')
     
     parser.add_argument('--descriptors_list', type=str, nargs='+', default=['hist'],
                         help='Image descriptor. Options: hist, LBP, Multiscale_LBP, OCLBP, DCT, wavelet. (Default: [hist])')
@@ -124,12 +126,35 @@ def parse_args():
 
     return args
 
-def process_queries_for_combo(query_list_raw, color_space, preprocess, masking):
+def process_queries_for_combo(query_list_raw, color_space, preprocess, masking=False):
     """Return queries converted to color_space + preprocess (+mask if requested)."""
     qlist = []
-    for query_set in query_list_raw:
-        sub_qlist = []
-        for img_bgr in query_set:
+    if masking:
+        for query_set in query_list_raw:
+            sub_qlist = []
+            for img_bgr in query_set:
+                q = cv2.cvtColor(img_bgr, constants.CV2_CVT_COLORS[color_space])
+                if preprocess == 'clahe':
+                    q = preprocessing.clahe_preprocessing(q, color_space)
+                elif preprocess == 'hist_eq':
+                    q = preprocessing.hist_eq(q, color_space)
+                elif preprocess == 'gamma':
+                    q = preprocessing.gamma(q)
+                elif preprocess == 'contrast':
+                    q = preprocessing.contrast(q)
+                elif preprocess == 'gaussian_blur':
+                    q = preprocessing.gaussian_blur(q)
+                elif preprocess == 'median_blur':
+                    q = preprocessing.median_blur(q)
+                elif preprocess == 'bilateral':
+                    q = preprocessing.bilateral(q)
+                elif preprocess == 'unsharp':
+                    q = preprocessing.unsharp(q)
+
+                sub_qlist.append(q)
+            qlist.append(sub_qlist)
+    else:
+        for img_bgr in query_list_raw:
             q = cv2.cvtColor(img_bgr, constants.CV2_CVT_COLORS[color_space])
             if preprocess == 'clahe':
                 q = preprocessing.clahe_preprocessing(q, color_space)
@@ -147,9 +172,9 @@ def process_queries_for_combo(query_list_raw, color_space, preprocess, masking):
                 q = preprocessing.bilateral(q)
             elif preprocess == 'unsharp':
                 q = preprocessing.unsharp(q)
-
-            sub_qlist.append(q)
-        qlist.append(sub_qlist)
+                
+            qlist.append(q)
+    
     return qlist
 
 
@@ -162,6 +187,7 @@ def main():
     color_spaces_list = args.color_space_list
     preprocesses_list = args.preprocesses_list
     masking = args.masking
+    denoising = args.denoising
 
     descriptors_list = args.descriptors_list
     bins_list = args.bins_list
@@ -219,34 +245,36 @@ def main():
     query_list_raw = []
     for image_path in sorted(glob.glob(query_pattern, root_dir=query_abs_path)):
         img_bgr = cv2.imread(image_path)
-        query_list_raw.append(filters.denoise_image(img_bgr, 'median', kernel_size=3))
+        if denoising:
+            query_list_raw.append(filters.denoise_image(img_bgr, 'median', kernel_size=3))
 
     # Extract and apply masks
-    masked_query_list_raw = []
-    masks_list, quads_list = mask_creation_w3_main.process_dataset(query_path)
-    for idx, (extracted_masks, extracted_quads) in enumerate(zip(masks_list, quads_list)):
-        subimages = []
-        for mask, quads in zip(extracted_masks, extracted_quads):
-            image = query_list_raw[idx]
+    if masking:
+        masked_query_list_raw = []
+        masks_list, quads_list = mask_creation_w3_main.process_dataset(query_path)
+        for idx, (extracted_masks, extracted_quads) in enumerate(zip(masks_list, quads_list)):
+            subimages = []
+            for mask, quads in zip(extracted_masks, extracted_quads):
+                image = query_list_raw[idx]
 
-            quads = np.stack(quads, axis=0)
-            xmin, ymin = quads.min(axis=0).astype(int)
-            xmax, ymax = quads.max(axis=0).astype(int) + 1
+                quads = np.stack(quads, axis=0)
+                xmin, ymin = quads.min(axis=0).astype(int)
+                xmax, ymax = quads.max(axis=0).astype(int) + 1
 
-            image = image[ymin:ymax, xmin:xmax]
-            mask = mask[ymin:ymax, xmin:xmax]
+                image = image[ymin:ymax, xmin:xmax]
+                mask = mask[ymin:ymax, xmin:xmax]
 
-            masked_image = np.where(mask[..., np.newaxis], image, np.zeros_like(image))
+                masked_image = np.where(mask[..., np.newaxis], image, np.zeros_like(image))
 
-            newH, newW = ymax - ymin, xmax - xmin
-            new_quads = quads - np.array([[xmin, ymin]])
+                newH, newW = ymax - ymin, xmax - xmin
+                new_quads = quads - np.array([[xmin, ymin]])
 
-            M, mask = cv2.findHomography(new_quads, np.array([[0, 0], [newW - 1, 0], [newW - 1, newH - 1], [0, newH - 1]]))
-            transformed_image = cv2.warpPerspective(masked_image, M, (newW, newH))
-            subimages.append(transformed_image)
-        masked_query_list_raw.append(subimages)
-    
-    query_list_raw = masked_query_list_raw
+                M, mask = cv2.findHomography(new_quads, np.array([[0, 0], [newW - 1, 0], [newW - 1, newH - 1], [0, newH - 1]]))
+                transformed_image = cv2.warpPerspective(masked_image, M, (newW, newH))
+                subimages.append(transformed_image)
+            masked_query_list_raw.append(subimages)
+        
+        query_list_raw = masked_query_list_raw
 
     # Collect every run (params + results) to pickle together
     all_runs = []
@@ -332,11 +360,31 @@ def main():
                 # Retrieve for all queries
                 for distance in distances_list:
                     results = [[] for _ in k_list]
-                    for q_list in current_queries:
-                        subresults = [[] for _ in k_list]
-                        for q in q_list:
-                            start_time = time.time()
-
+                    if masking:
+                        for q_list in current_queries:
+                            subresults = [[] for _ in k_list]
+                            for q in q_list:
+                                if descriptor_ == "hist":
+                                    desc = histograms.gen_hist(q, bins, blocks, hist_dims)
+                                elif descriptor_ == "LBP":
+                                    desc = LBP.get_LBP_hist(q, bins, blocks)
+                                elif descriptor_ == "Multiscale_LBP":
+                                    desc = LBP.get_Multiscale_LBP_hist(q, bins, blocks, scales_)
+                                elif descriptor_ == "OCLBP":
+                                    desc = LBP.get_OCLBP_hist(q, bins, blocks, P_, R_, use_uniform_u2=uniform_u2)
+                                elif descriptor_ == "DCT":
+                                    desc = DCT.get_DCT_descriptor(q, blocks, coeffs=coeffs_)
+                                elif descriptor_ == "wavelet":
+                                    desc = wavelets.wavelets_descriptor(q, wavelet=wavelet, bins=bins, num_windows=blocks, num_dimensions=hist_dims)                    
+                                
+                                order = db.get_top_k_similar_images(desc, distance)
+                                for i, k in enumerate(k_list):
+                                    subresults[i].append(order[:k])
+                            
+                            for i in range(len(k_list)):
+                                results[i].append(subresults[i])
+                    else:
+                        for q in current_queries:
                             if descriptor_ == "hist":
                                 desc = histograms.gen_hist(q, bins, blocks, hist_dims)
                             elif descriptor_ == "LBP":
@@ -352,16 +400,13 @@ def main():
                             
                             order = db.get_top_k_similar_images(desc, distance)
                             for i, k in enumerate(k_list):
-                                subresults[i].append(order[:k])
-                        
-                        for i in range(len(k_list)):
-                            results[i].append(subresults[i])
+                                results[i].append(order[:k])
 
                     # Evaluate & bookkeeping
                     if val:
                         mapk_list = []
                         for i_k, (result_k, k_val) in enumerate(zip(results, k_list)):
-                            mapk = average_precision.mapk(groundtruth, result_k, k=k_val)
+                            mapk = average_precision.mapk(groundtruth, result_k, k=k_val, multi=masking)
                             mapk_list.append(mapk)
 
                             if mapk >= best_mapk[i_k]:
