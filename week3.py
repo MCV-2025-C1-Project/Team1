@@ -484,10 +484,10 @@ def main():
             print(f"Best config: {config}")
             print(f"Best mapk: {mapk:.4f}")
 
-    # Pickle ALL combos together if requested
     if output_pickle:
-        with open(output_pickle, "wb") as f:
-            pickle.dump(all_runs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        for result in results:
+            with open(output_pickle, "wb") as f:
+                pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":
