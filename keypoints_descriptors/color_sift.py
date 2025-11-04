@@ -21,11 +21,11 @@ def _rootsift_transform(desc: Optional[np.ndarray]):
 
 def color_sift_descriptor(
     img: np.ndarray,
-    mode: str = "opponent",  # "opponent" or "rgb"
-    nfeatures: int = 0,
-    nOctaveLayers: int = 3,
-    contrastThreshold: float = 0.04,
-    edgeThreshold: int = 10,
+    sift_mode: str = "opponent",  # "opponent" or "rgb"
+    n_features: int = 0,
+    n_octave_layers: int = 3,
+    contrast_threshold: float = 0.04,
+    edge_threshold: int = 10,
     sigma: float = 1.6,
     mask: Optional[np.ndarray] = None,
     use_rootsift: bool = False,
@@ -43,14 +43,14 @@ def color_sift_descriptor(
         raise ValueError("Color-SIFT expects a color image (BGR).")
 
     sift = cv2.SIFT_create(
-        nfeatures=nfeatures,
-        nOctaveLayers=nOctaveLayers,
-        contrastThreshold=contrastThreshold,
-        edgeThreshold=edgeThreshold,
+        nfeatures=n_features,
+        nOctaveLayers=n_octave_layers,
+        contrastThreshold=contrast_threshold,
+        edgeThreshold=edge_threshold,
         sigma=sigma
     )
 
-    if mode.lower() == "opponent":
+    if sift_mode.lower() == "opponent":
         O1, O2, O3 = _opponent_channels(img)
         # Detect keypoints on intensity-like channel (O3)
         kps = sift.detect(O3 if mask is None else O3.astype(np.uint8), mask)
@@ -58,7 +58,7 @@ def color_sift_descriptor(
         kps, d1 = sift.compute(O1, kps)
         _,  d2 = sift.compute(O2, kps)
         _,  d3 = sift.compute(O3, kps)
-    elif mode.lower() == "rgb":
+    elif sift_mode.lower() == "rgb":
         B, G, R = cv2.split(img)  # still BGR order; we'll pass R,G,B for clarity
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # Detect on intensity (gray)
@@ -144,7 +144,7 @@ if __name__ == "__main__":
         raise FileNotFoundError(path)
 
     # Opponent-SIFT (recommended)
-    kps, des = color_sift_descriptor(img, mode="opponent", use_rootsift=False)
+    kps, des = color_sift_descriptor(img, sift_mode="opponent", use_rootsift=False)
     print(f"Keypoints: {len(kps)}")
     print("Color-SIFT descriptors shape:", None if des is None else des.shape)  # (N, 384)
 

@@ -4,10 +4,10 @@ from typing import List, Tuple, Optional
 
 def sift_descriptor(
     img: np.ndarray,
-    nfeatures: int = 0,
-    nOctaveLayers: int = 3,
-    contrastThreshold: float = 0.04,
-    edgeThreshold: int = 10,
+    n_features: int = 0,
+    n_octave_layers: int = 3,
+    contrast_threshold: float = 0.04,
+    edge_threshold: int = 10,
     sigma: float = 1.6,
     mask: Optional[np.ndarray] = None,
 ):
@@ -25,10 +25,10 @@ def sift_descriptor(
         gray = img
 
     sift = cv2.SIFT_create(
-        nfeatures=nfeatures,
-        nOctaveLayers=nOctaveLayers,
-        contrastThreshold=contrastThreshold,
-        edgeThreshold=edgeThreshold,
+        nfeatures=n_features,
+        nOctaveLayers=n_octave_layers,
+        contrastThreshold=contrast_threshold,
+        edgeThreshold=edge_threshold,
         sigma=sigma
     )
     keypoints, descriptors = sift.detectAndCompute(gray, mask)

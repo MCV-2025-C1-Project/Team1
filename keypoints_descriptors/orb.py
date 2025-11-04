@@ -4,15 +4,15 @@ from typing import List, Tuple, Optional
 
 def orb_descriptor(
     img: np.ndarray,
-    nfeatures: int = 1000,       # cap on number of keypoints to keep
-    scaleFactor: float = 1.2,    # image pyramid scaling between levels
-    nlevels: int = 8,            # number of pyramid levels
-    edgeThreshold: int = 31,     # size of border where features are not detected
-    firstLevel: int = 0,
+    n_features: int = 1000,       # cap on number of keypoints to keep
+    scale_factor: float = 1.2,    # image pyramid scaling between levels
+    n_levels: int = 8,            # number of pyramid levels
+    edge_threshold: int = 31,     # size of border where features are not detected
+    first_level: int = 0,
     WTA_K: int = 2,              # number of points that produce each BRIEF comparison (2,3,4)
-    scoreType: int = cv2.ORB_HARRIS_SCORE,  # or cv2.ORB_FAST_SCORE
-    patchSize: int = 31,         # size of the patch used by the BRIEF descriptor
-    fastThreshold: int = 20,     # FAST corner detector threshold
+    score_type: int = cv2.ORB_HARRIS_SCORE,  # or cv2.ORB_FAST_SCORE
+    patch_size: int = 31,         # size of the patch used by the BRIEF descriptor
+    fast_threshold: int = 20,     # FAST corner detector threshold
     mask: Optional[np.ndarray] = None,
 ):
     """
@@ -29,15 +29,15 @@ def orb_descriptor(
         gray = img
 
     orb = cv2.ORB_create(
-        nfeatures=nfeatures,
-        scaleFactor=scaleFactor,
-        nlevels=nlevels,
-        edgeThreshold=edgeThreshold,
-        firstLevel=firstLevel,
+        nfeatures=n_features,
+        scaleFactor=scale_factor,
+        nlevels=n_levels,
+        edgeThreshold=edge_threshold,
+        firstLevel=first_level,
         WTA_K=WTA_K,
-        scoreType=scoreType,
-        patchSize=patchSize,
-        fastThreshold=fastThreshold,
+        scoreType=score_type,
+        patchSize=patch_size,
+        fastThreshold=fast_threshold,
     )
 
     keypoints, descriptors = orb.detectAndCompute(gray, mask)
