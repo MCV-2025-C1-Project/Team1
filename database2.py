@@ -1,10 +1,11 @@
-import os
-import cv2
 import glob
-import numpy as np
+import os
+
+import cv2
 from sklearn.cluster import DBSCAN
 
 from keypoints_descriptors import generate_descriptor
+
 
 class Database:
     def __init__(self, path: str):
@@ -44,7 +45,8 @@ class Database:
             self.descriptors.append(generate_descriptor(img, self.kp_descriptor, **self.parameters))
     
     def get_similar(self, desc) -> list[int]:
-        
+        # TODO: Ensure correct method output (list of list of idx). Add clustering
+
         if self.kp_descriptor in ('sift', 'color_sift'):
             bf = cv2.BFMatcher.create(cv2.NORM_L2)
         elif self.kp_descriptor == 'orb':
@@ -69,6 +71,5 @@ class Database:
 
         match_list = sorted(match_list, lambda x: len(x[1]), reverse=True)
         match_list = [m[0] for m in match_list]
-
 
         return match_list
