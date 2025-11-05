@@ -81,12 +81,18 @@ def load_dataset(path: str) -> list[np.ndarray]:
         images.append(img)
     return images
 
-def find_match(qs: list[np.ndarray], db: database2.Database, cfg: itertools.product[tuple]):
+def find_match(qs: list[np.ndarray], db: database2.Database, cfg: itertools.product[tuple], k_list: list[int]):
     db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+    result = [[] for _ in k_list]
     for img in qs:
         kp, desc = generate_descriptor(img, cfg[0])
         matches = db.get_similar()
-    pass
+        subresults = [[] for _ in k_list]
+        for idx, k in enumerate(k_list):
+            for match in matches:
+                subresults[idx].append(match[:k])
+
+    return 
 
 def main():
     args = parse_config_file(parse_args())
@@ -143,7 +149,8 @@ def main():
         combos = combo_sift + combo_orb + combo_csift
 
         for cfg in tqdm(combos):
-            find_match(qs, db, cfg)
+            result = find_match(qs, db, cfg, args.k)
+            
     
         # Compute MAP@K
     elif args.mode == 'eval':

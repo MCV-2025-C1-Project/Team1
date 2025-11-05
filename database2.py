@@ -2,6 +2,7 @@ import os
 import cv2
 import glob
 import numpy as np
+from sklearn.cluster import DBSCAN
 
 from keypoints_descriptors import generate_descriptor
 
@@ -40,8 +41,34 @@ class Database:
     def __generate_descriptors(self):
         self.descriptors = []
         for img in self.images:
-            generate_descriptor(img, self.kp_descriptor, **self.parameters)
-            pass
+            self.descriptors.append(generate_descriptor(img, self.kp_descriptor, **self.parameters))
+    
+    def get_similar(self, desc) -> list[int]:
+        
+        if self.kp_descriptor in ('sift', 'color_sift'):
+            bf = cv2.BFMatcher.create(cv2.NORM_L2)
+        elif self.kp_descriptor == 'orb':
+            if 'WTA_K' in self.parameters.keys() and self.parameters['WTA_K'] > 2:
+                bf = cv2.BFMatcher.create(cv2.NORM_HAMMING)
+            else:
+                bf = cv2.BFMatcher.create(cv2.NORM_HAMMING2)
+        
+        match_list = []
+        for idx, db_desc in enumerate(self.descriptors):
+            matches = bf.knnMatch(desc, db_desc)
+            
+            good = []
+            for m, n in matches:
+                if m.distance < 0.75 * n.distance: good.append([m])
 
-    def get_similar(self):
-        pass
+        if len(good) > len(matches) * 0.75:
+            match_list.append((idx, good))        
+
+        if len(match_list) == 0:
+            return [-1]
+
+        match_list = sorted(match_list, lambda x: len(x[1]), reverse=True)
+        match_list = [m[0] for m in match_list]
+
+
+        return match_list
