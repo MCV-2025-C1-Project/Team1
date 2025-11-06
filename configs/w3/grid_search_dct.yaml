@@ -1,0 +1,21 @@
+data:
+  database_path: datasets/BBDD/
+  query_path: datasets/qsd2_w3/
+
+retrieval:
+  color_space_list: [lab, gray_scale]
+  preprocesses_list: ['', clahe]
+  masking: true
+  denoising: true
+
+  descriptors_list: [DCT]
+
+  blocks_list: [4,8]         
+  DCT_coeffs_list: [4, 8, 16]
+
+  distances_list: [euclidean, l1, x2, hist_intersection, hellinger, canberra]
+
+  k_list: [1]
+
+evaluation:
+  val: true

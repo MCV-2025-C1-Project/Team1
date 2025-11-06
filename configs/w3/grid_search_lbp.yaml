@@ -1,0 +1,24 @@
+data:
+  database_path: datasets/BBDD/
+  query_path: datasets/qsd2_w3/
+
+retrieval:
+  color_space_list: [lab, gray_scale]
+  preprocesses_list: ['', clahe]
+  masking: true
+  denoising: true
+
+  descriptors_list: [LBP, Multiscale_LBP]
+
+  bins_list: [16,32]
+  blocks_list: [4,8]
+  hist_dims_list: [1]           
+  
+  LBP_scales_list:
+  - [[8, 1.0],[10, 2]]
+  distances_list: [euclidean, l1, x2, hist_intersection, hellinger, canberra]
+  
+  k_list: [1]
+
+evaluation:
+  val: true

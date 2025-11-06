@@ -204,7 +204,7 @@ def draw_hough_lines(edges, orig_img=None, use_probabilistic=True,
                 cv2.line(canvas, (x1, y1), (x2, y2), (0, 0, 255), 2, cv2.LINE_AA)
 
     if save_path:
-        cv2.imwrite(save_path, canvas)
+        # cv2.imwrite(save_path, canvas)
         print(f"[INFO] Hough lines image saved to: {save_path}")
 
     if show:
@@ -506,11 +506,11 @@ def process_single_image(image_path: str,
         overlay, quad = draw_frame_from_edges(edges_b, orig_img=original_img)
         _maybe_show("1 Image (initial quad)", overlay, show)
         mask = quads_to_mask(quad, (H, W))
-        cv2.imwrite(out_path, mask)
+        # cv2.imwrite(out_path, mask)
 
         new_quad = process_shadows(mask, axis=0, original_img=original_img, show=show)
         mask = quads_to_mask(new_quad, (H, W))
-        cv2.imwrite(out_path, mask)
+        # cv2.imwrite(out_path, mask)
 
         # overlayed = overlay_mask_on_image(original_img, mask, color=(0, 0, 255), alpha=0.4)
         # cv2.imwrite(out_path.replace('.png', '_overlay.png'), overlayed)
@@ -567,7 +567,7 @@ def process_single_image(image_path: str,
         print(quad2)
 
         mask = quads_to_mask([quad1, quad2], (H, W))
-        cv2.imwrite(out_path, mask)
+        # cv2.imwrite(out_path, mask)
         # overlayed = overlay_mask_on_image(original_img, mask, color=(0, 0, 255), alpha=0.4)
         # cv2.imwrite(out_path.replace('.png', '_overlay.png'), overlayed)
         quads.append(quad1)
@@ -588,7 +588,7 @@ def process_single_image(image_path: str,
             f1_i        = 2 * precision_i * recall_i / (precision_i + recall_i + 1e-8)
             metrics = dict(TP=TP, FP=FP, FN=FN,
                            precision=precision_i, recall=recall_i, f1=f1_i)
-    return n, mask, metrics, quads
+    return n, masks, metrics, quads
 
 
 def process_dataset(path: str = DEFAULT_PATH,
@@ -604,7 +604,7 @@ def process_dataset(path: str = DEFAULT_PATH,
     masks = []
     quads = []
 
-    for image_path in glob.iglob(os.path.join(path, '*.jpg')):
+    for image_path in sorted(glob.glob(os.path.join(path, '*.jpg'))):
         n, mask, metrics, quad = process_single_image(image_path, out_dir, evaluate=evaluate, show=show)
         masks.append(mask)
         quads.append(quad)
