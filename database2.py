@@ -2,6 +2,7 @@ import glob
 import os
 
 import cv2
+import numpy as np
 from sklearn.cluster import DBSCAN
 
 from keypoints_descriptors import generate_descriptor
@@ -44,9 +45,7 @@ class Database:
         for img in self.images:
             self.descriptors.append(generate_descriptor(img, self.kp_descriptor, **self.parameters))
     
-    def get_similar(self, desc) -> list[int]:
-        # TODO: Ensure correct method output (list of list of idx). Add clustering
-
+    def get_similar(self, kp, desc) -> list[int]:
         if self.kp_descriptor in ('sift', 'color_sift'):
             bf = cv2.BFMatcher.create(cv2.NORM_L2)
         elif self.kp_descriptor == 'orb':
@@ -56,20 +55,41 @@ class Database:
                 bf = cv2.BFMatcher.create(cv2.NORM_HAMMING2)
         
         match_list = []
+        centroids = []
         for idx, db_desc in enumerate(self.descriptors):
             matches = bf.knnMatch(desc, db_desc)
             
             good = []
             for m, n in matches:
-                if m.distance < 0.75 * n.distance: good.append([m])
+                if m.distance < 0.75 * n.distance: good.append(m)
 
-        if len(good) > len(matches) * 0.75:
-            match_list.append((idx, good))        
+                    
+            points = []
+            if len(good) == 0 or len(good) < len(matches) * 0.75: continue
+            
+            for m in good:
+                idx = m.queryIdx
+                (x, y) = kp[idx].pt
+                points.append([x, y])
+            points = np.array(points)
+            xcentroid = np.mean(points[..., 0])
+            ycentroid = np.mean(points[..., 1])
+
+            match_list.append((idx, good))
+            centroids.append(np.array([xcentroid, ycentroid]))
 
         if len(match_list) == 0:
-            return [-1]
-
+            return [[-1]]
+        
         match_list = sorted(match_list, lambda x: len(x[1]), reverse=True)
-        match_list = [m[0] for m in match_list]
 
-        return match_list
+        # Cluster
+        centroids = np.stack(centroids, axis=0)
+        db = DBSCAN(eps=50, min_samples=15).fit(centroids)
+        num_clusters = len(set(db.labels_) - {-1})
+        final_matches = [[] for _ in num_clusters]
+        for i, (idx, m) in enumerate(match_list):
+            if db.labels_[i] != -1:
+                final_matches[db.labels_[i]].append(idx)
+
+        return final_matches
