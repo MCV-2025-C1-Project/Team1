@@ -106,6 +106,15 @@ def parse_args():
         images.append(img)
     return images"""
 
+def _limit_size(img: np.ndarray, max_side: int = 512) -> np.ndarray:
+    h, w = img.shape[:2]
+    ms = max(h, w)
+    if ms > max_side:
+        scale = max_side / ms
+        img = cv2.GaussianBlur(img, (3, 3), 1)
+        img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    return img
+
 def load_dataset(path: str) -> list[np.ndarray]:
     images = []
     file_list = sorted(glob.glob(os.path.join(path, '*.jpg')))
@@ -113,6 +122,7 @@ def load_dataset(path: str) -> list[np.ndarray]:
         img = cv2.imread(f)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img = cv2.medianBlur(img, 3)
+        img = _limit_size(img, 512) #speed up
         images.append(img)
     return images
 
@@ -166,17 +176,34 @@ def find_match(qs, db, cfg, k_list, show=False):
         kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
         #ranked = db.get_similar(kp, desc) 
         
-        ranked = db.get_similar_simple(kp,desc)
+        ranked = [db.get_similar_simple(kp,desc)]
+        print("ranked:", ranked)
+        for idx, k in enumerate(k_list):
+            results[idx].append(ranked[:k])
+    
+    return results
+"""
+def find_match(qs, db, cfg, k_list, show=False):
+    db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+    results = [[] for _ in k_list]
+
+    for img in tqdm(qs, total=len(qs), desc="Matching queries", unit="img", leave=False):
+        # build a BGR image for visualization
+        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
+
+        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+        # ranked = db.get_similar(kp, desc)
+        ranked = db.get_similar_simple(kp, desc)
+
         # if clusters, take the first cluster
+        print("ranked:", ranked)
         if isinstance(ranked, list) and ranked and isinstance(ranked[0], list):
             ranked = ranked[0]
-
+            print("ranked_after",ranked)
         for idx, k in enumerate(k_list):
             results[idx].append(ranked[:k])
 
-    return results
-
-
+    return results"""
 
 def dataset_mapk(
     results: list, groundtruth: list,
@@ -189,6 +216,7 @@ def dataset_mapk(
     
     mapk_list = []
     for idx, (r, k) in enumerate(zip(results, k_list)):
+        print("idx, (r, k):", idx, r, k)
         mapk = average_precision.mapk(groundtruth, r, k=k, multi=True)
         mapk_list.append(mapk)
         if mapk >= best_mapk[idx]:

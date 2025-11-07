@@ -23,15 +23,29 @@ class Database:
         #self.process()
 
     def load_db(self, path: str):
-        """Load all .jpg images from `path` as grayscale."""
+        """Load all .jpg images from `path` as grayscale, preprocessed and size-capped."""
         self.images = []
         pattern = os.path.join(path, '*.jpg')
         file_list = sorted(glob.glob(pattern))
-        for f in file_list:  # `f` is already an absolute/relative full path from glob
+        for f in file_list:
             img = cv2.imread(f)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            img = cv2.medianBlur(img, 3)              # match query preprocessing
+            img = self._limit_size(img, 512)          # <- size reduction here
             self.images.append(img)
 
+    @staticmethod
+    def _limit_size(img: np.ndarray, max_side: int = 512) -> np.ndarray:
+        """Light blur + downscale so the longest side is <= max_side."""
+        h, w = img.shape[:2]
+        ms = max(h, w)
+        if ms > max_side:
+            scale = max_side / ms
+            # blur before strong downscale to reduce aliasing
+            img = cv2.GaussianBlur(img, (3, 3), 1)
+            img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        return img
+    
     def change_params(self, kp_descriptor: str | None = None, parameters: dict | None = None, autoprocess: bool = False):
         """
         Update the active keypoint/descriptor family and its parameters.

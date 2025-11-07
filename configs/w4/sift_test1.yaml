@@ -4,14 +4,14 @@ dataset: "../qsd1_w4"
 
 # Solo SIFT (un combo)
 kp_descriptor: ["sift"]
-n_features: [500]
+n_features: [20]
 edge_threshold: [10]
 n_octave_layers: [3]
 contrast_threshold: [0.02]
 sigma: [1.6]
 
 # MAP@K a evaluar
-k: [1]
+k: [1,5]
 
 # Modo y salida
 mode: "search"
