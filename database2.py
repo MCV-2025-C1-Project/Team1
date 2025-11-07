@@ -10,86 +10,249 @@ from keypoints_descriptors import generate_descriptor
 
 class Database:
     def __init__(self, path: str):
+        # In-memory storage for grayscale images and their descriptors
         self.images = []
         self.descriptors = []
 
-        # Create parameters
+        # Active descriptor family and its parameters (set via change_params)
         self.kp_descriptor = None
         self.parameters = {}
 
+        # Load database images immediately, then precompute descriptors
         self.load_db(path)
-        self.process()
-        pass
+        #self.process()
 
     def load_db(self, path: str):
+        """Load all .jpg images from `path` as grayscale."""
         self.images = []
         pattern = os.path.join(path, '*.jpg')
         file_list = sorted(glob.glob(pattern))
-        for file in file_list:
-            f = os.path.join(path, file)
+        for f in file_list:  # `f` is already an absolute/relative full path from glob
             img = cv2.imread(f)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             self.images.append(img)
-    
-    def change_params(self, kp_descriptor: str | None = None, parameters: dict = None, autoprocess: bool = False):
-        if kp_descriptor: self.kp_descriptor = kp_descriptor
-        if parameters: self.parameters = parameters
 
-        if autoprocess: self.process()
+    def change_params(self, kp_descriptor: str | None = None, parameters: dict | None = None, autoprocess: bool = False):
+        """
+        Update the active keypoint/descriptor family and its parameters.
+        If `autoprocess` is True, recompute descriptors for the whole DB.
+        """
+        if kp_descriptor is not None:
+            self.kp_descriptor = kp_descriptor
+        if parameters is not None:
+            self.parameters = parameters
+        if autoprocess:
+            self.process()
 
     def process(self):
+        """Regenerate descriptors for the entire database with current parameters."""
         self.__generate_descriptors()
 
     def __generate_descriptors(self):
+        """
+        For each database image, compute descriptors with the selected method.
+        We store ONLY the descriptors (not the DB keypoints), because matching
+        uses the query keypoints to build centroids.
+        """
         self.descriptors = []
         for img in self.images:
-            self.descriptors.append(generate_descriptor(img, self.kp_descriptor, **self.parameters))
-    
-    def get_similar(self, kp, desc) -> list[int]:
+            kp, desc = generate_descriptor(img, self.kp_descriptor, **self.parameters)
+            self.descriptors.append(desc)
+
+
+
+    def get_similar(self, kp, desc) -> list[list[int]]:
+        from tqdm import tqdm
+
+        # --- Guard against blank/degenerate queries ---
+        if kp is None or len(kp) == 0 or desc is None or len(desc) == 0:
+            return [[-1]]
+
+        # 1) Matcher selection
         if self.kp_descriptor in ('sift', 'color_sift'):
             bf = cv2.BFMatcher.create(cv2.NORM_L2)
         elif self.kp_descriptor == 'orb':
-            if 'WTA_K' in self.parameters.keys() and self.parameters['WTA_K'] > 2:
-                bf = cv2.BFMatcher.create(cv2.NORM_HAMMING)
-            else:
-                bf = cv2.BFMatcher.create(cv2.NORM_HAMMING2)
-        
-        match_list = []
-        centroids = []
-        for idx, db_desc in enumerate(self.descriptors):
-            matches = bf.knnMatch(desc, db_desc)
-            
-            good = []
-            for m, n in matches:
-                if m.distance < 0.75 * n.distance: good.append(m)
-
-                    
-            points = []
-            if len(good) == 0 or len(good) < len(matches) * 0.75: continue
-            
-            for m in good:
-                idx = m.queryIdx
-                (x, y) = kp[idx].pt
-                points.append([x, y])
-            points = np.array(points)
-            xcentroid = np.mean(points[..., 0])
-            ycentroid = np.mean(points[..., 1])
-
-            match_list.append((idx, good))
-            centroids.append(np.array([xcentroid, ycentroid]))
-
-        if len(match_list) == 0:
+            W = self.parameters.get('WTA_K', 2)
+            norm = cv2.NORM_HAMMING if W == 2 else cv2.NORM_HAMMING2
+            bf = cv2.BFMatcher.create(norm)
+        else:
             return [[-1]]
+
+        # 2) Collect candidates (per-DB centroid)
+        entries = []  # [(db_idx, num_good, cx, cy)]
+        ratio = 0.8        
+        min_good = 10        
+        min_frac_good = 0.08 
+
+
+        # Progress bar around the slowest part: matching vs all DB descriptors
+        for db_idx, db_desc in enumerate(
+            tqdm(self.descriptors, total=len(self.descriptors), desc="Matching DB", leave=False)
+        ):
+            if db_desc is None or len(db_desc) == 0:
+                continue
+
+            matches = bf.knnMatch(desc, db_desc, k=2)
+
+            good = []
+            for pair in matches:
+                if len(pair) < 2:
+                    continue
+                m, n = pair
+                if m.distance < ratio * n.distance:
+                    good.append(m)
+
+            # gate by absolute and fractional thresholds
+            required = max(min_good, int(np.ceil(min_frac_good * max(1, len(matches)))))
+            if len(good) < required:
+                continue
+
+            pts = np.float32([kp[m.queryIdx].pt for m in good])
+            cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+            entries.append((db_idx, len(good), cx, cy))
+
+        if not entries:
+            return [[-1]]
+
+        # 3) Sort by number of good matches (desc)
+        entries.sort(key=lambda e: e[1], reverse=True)
+        centroids = np.float32([[e[2], e[3]] for e in entries])
+
+        # Single painting fallback if too few candidates
+        if len(centroids) < 3:
+            best_id = entries[0][0]
+            return [[best_id]]
+
+        # 4) Cluster centroids (detect multiple paintings)
+        xs = np.array([kp.pt[0] for kp in kp], dtype=np.float32)
+        x_span = float(xs.max() - xs.min()) if len(xs) else 0
+        eps = max(20.0, 0.06 * x_span)
+        dbscan = DBSCAN(eps=eps, min_samples=10)
+
+        labels = dbscan.fit_predict(centroids)
+        valid = [lab for lab in set(labels) if lab != -1]
+
+        if not valid:
+            best_id = entries[0][0]
+            return [[best_id]]
+
+        # Group by cluster, pick a representative DB id per cluster (most good matches)
+        clusters = {}  # lab -> {'indices': [(db_idx, num_good)], 'sum_good': int, 'xs': []}
+        for i, (db_idx, num_good, cx, cy) in enumerate(entries):
+            lab = labels[i]
+            if lab == -1:
+                continue
+            info = clusters.setdefault(lab, {'indices': [], 'sum_good': 0, 'xs': []})
+            info['indices'].append((db_idx, num_good))
+            info['sum_good'] += num_good
+            info['xs'].append(cx)
+
+        if not clusters:
+            best_id = entries[0][0]
+            return [[best_id]]
+
+        cluster_list = []
+        for lab, info in clusters.items():
+            rep_db_idx = max(info['indices'], key=lambda t: t[1])[0]  # t=(db_idx, num_good)
+            mean_x = float(np.mean(info['xs']))
+            total_support = info['sum_good']
+            cluster_list.append((lab, rep_db_idx, total_support, mean_x))
+
+        # Keep up to two strongest clusters, order left->right
+        top_by_support = sorted(cluster_list, key=lambda t: t[2], reverse=True)[:2]
+        top_lr = sorted(top_by_support, key=lambda t: t[3])
+
+        final_ids = [[t[1]] for t in top_lr]
+        return final_ids if final_ids else [[-1]]
+
+
+    def get_similar_simple(self, kp, desc,
+                        ratio=0.75,       # Lowe ratio for SIFT/ORB
+                        top_k=20,         # how many best distances per DB to aggregate
+                        min_good=10,      # minimum good matches to consider a DB a candidate
+                        dominance=1.4,    # how many times top1 count must exceed top2 to be "clearly best"
+                        mean_gap=0.05):   # relative gap (12%) on mean distance to call it "clearly better"
+        """
+        Very simple retrieval:
+        1) BFMatcher + Lowe ratio
+        2) For each DB: collect 'good' matches, take the top_k smallest distances, compute their mean
+        3) Rank by (good_count desc, mean_dist asc)
+        4) Decide: [id] or [id1, id2] or [-1]
+        Returns a FLAT list of ints, e.g. [104] or [104, 251] or [-1]
+        """
+        import numpy as np
+        import cv2
+
         
-        match_list = sorted(match_list, lambda x: len(x[1]), reverse=True)
+        # --- guard
+        if kp is None or len(kp) == 0 or desc is None or len(desc) == 0:
+            return [-1]
 
-        # Cluster
-        centroids = np.stack(centroids, axis=0)
-        db = DBSCAN(eps=50, min_samples=15).fit(centroids)
-        num_clusters = len(set(db.labels_) - {-1})
-        final_matches = [[] for _ in num_clusters]
-        for i, (idx, m) in enumerate(match_list):
-            if db.labels_[i] != -1:
-                final_matches[db.labels_[i]].append(idx)
+        # matcher
+        if self.kp_descriptor in ('sift', 'color_sift'):
+            bf = cv2.BFMatcher.create(cv2.NORM_L2)
+        elif self.kp_descriptor == 'orb':
+            W = self.parameters.get('WTA_K', 2)
+            norm = cv2.NORM_HAMMING if W == 2 else cv2.NORM_HAMMING2
+            bf = cv2.BFMatcher.create(norm)
+        else:
+            return [-1]
 
-        return final_matches
+        # collect simple stats per DB
+        stats = []  # (db_idx, good_count, mean_bestK)
+        for db_idx, db_desc in enumerate(self.descriptors):
+            if db_desc is None or len(db_desc) == 0:
+                continue
+
+            # knn matches against this DB
+            m2 = bf.knnMatch(desc, db_desc, k=2)
+            good = []
+            for pair in m2:
+                if len(pair) < 2:
+                    continue
+                m, n = pair
+                if m.distance < ratio * n.distance:
+                    good.append(m.distance)
+
+            if len(good) < min_good:
+                continue
+
+            # take K best distances (smaller is better)
+            good = np.sort(np.array(good, dtype=np.float32))
+            mean_best = float(good[:top_k].mean()) if len(good) > 0 else 1e9
+            stats.append((db_idx, len(good), mean_best))
+
+        if not stats:
+            return [-1]
+
+        # sort: more good matches first, then smaller mean distance
+        stats.sort(key=lambda t: (-t[1], t[2]))
+
+        # decision rules
+        if len(stats) == 1:
+            return [stats[0][0]]
+
+        # unpack top entries
+        id1, c1, m1 = stats[0]
+        id2, c2, m2 = stats[1]
+        c3 = stats[2][1] if len(stats) > 2 else 0
+        m3 = stats[2][2] if len(stats) > 2 else m2 * (1.0 / (1.0 - mean_gap))  # safe default
+
+        # 1) single clear winner?
+        #    - top1 has many more matches than top2, OR
+        #    - top1's mean distance is clearly smaller (by mean_gap)
+        if (c1 >= dominance * max(1, c2)) and (m1 <= (1.0 - mean_gap) * m2):
+            return [id1]
+
+        # 2) two stand out vs the rest?
+        #    - both have enough matches
+        #    - and either their means are clearly better than #3, or counts stand out vs #3
+        two_good_enough = (c1 >= min_good and c2 >= min_good)
+        two_better_than_rest = (m1 <= (1.0 - mean_gap) * m3) or (m2 <= (1.0 - mean_gap) * m3) \
+                            or (c1 >= dominance * max(1, c3)) or (c2 >= dominance * max(1, c3))
+        if two_good_enough and two_better_than_rest:
+            # return left->right order is not relevant here, so keep best first
+            return [id1, id2]
+
+        # 3) otherwise: everything looks similar → no confident decision
+        return [-1]

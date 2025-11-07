@@ -27,6 +27,17 @@ def str2bool(v):
     else:
         return None
 
+def parse_config_file(args: argparse.Namespace) -> argparse.Namespace:
+    if not args.config:
+        return args
+    
+    with open(args.config, "r") as f:
+        file_cfg = yaml.safe_load(f) or {}
+
+    # fusiona: CLI pisa a YAML
+    merged = {**file_cfg, **{k: v for k, v in vars(args).items() if v is not None}}
+    return argparse.Namespace(**merged)
+
 def check_args(args: argparse.Namespace):
     if args.mode == 'search':
         if not args.output_csv: raise ValueError(f"For mode {args.mode} argument --output_csv must be specified.")
@@ -74,7 +85,7 @@ def parse_args():
 
     return parser.parse_args()
 
-def parse_config_file(args: argparse.Namespace) -> argparse.Namespace:
+"""def parse_config_file(args: argparse.Namespace) -> argparse.Namespace:
     if not args.config: return args
     
     cfg = yaml.safe_load(args.config)
@@ -82,8 +93,8 @@ def parse_config_file(args: argparse.Namespace) -> argparse.Namespace:
         if value is not None:
             cfg[key] = value
     return cfg
-
-def load_dataset(path: str) -> list[np.ndarray]:
+"""
+"""def load_dataset(path: str) -> list[np.ndarray]:
     images = []
     pattern = os.path.join(path, '*.jpg')
     file_list = sorted(glob.glob(pattern))
@@ -92,6 +103,16 @@ def load_dataset(path: str) -> list[np.ndarray]:
         img = cv2.imread(f)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img = cv2.medianBlur(img, 3, None)
+        images.append(img)
+    return images"""
+
+def load_dataset(path: str) -> list[np.ndarray]:
+    images = []
+    file_list = sorted(glob.glob(os.path.join(path, '*.jpg')))
+    for f in file_list:
+        img = cv2.imread(f)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = cv2.medianBlur(img, 3)
         images.append(img)
     return images
 
@@ -121,7 +142,7 @@ def mask_dataset(path: str, qs: list[np.ndarray]) -> list[np.ndarray]:
         qs_masked.append(subimages)
     return qs_masked
 
-def find_match(qs: list[np.ndarray], db: database2.Database, cfg: itertools.product[tuple], k_list: list[int]) -> list:
+"""def find_match(qs: list[np.ndarray], db: database2.Database, cfg: itertools.product[tuple], k_list: list[int]) -> list:
     db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
     results = [[] for _ in k_list]
     for img in qs:
@@ -132,7 +153,30 @@ def find_match(qs: list[np.ndarray], db: database2.Database, cfg: itertools.prod
             for match in matches:
                 results[idx].append(match[:k])
     
+    return results"""
+
+def find_match(qs, db, cfg, k_list, show=False):
+    db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+    results = [[] for _ in k_list]
+
+    for img in qs:
+        # build a BGR image for visualization
+        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
+
+        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+        #ranked = db.get_similar(kp, desc) 
+        
+        ranked = db.get_similar_simple(kp,desc)
+        # if clusters, take the first cluster
+        if isinstance(ranked, list) and ranked and isinstance(ranked[0], list):
+            ranked = ranked[0]
+
+        for idx, k in enumerate(k_list):
+            results[idx].append(ranked[:k])
+
     return results
+
+
 
 def dataset_mapk(
     results: list, groundtruth: list,
@@ -140,6 +184,9 @@ def dataset_mapk(
     cfg: dict, k_list: list[int]
 ) -> tuple[list]:
     # Compute MAP@K
+    print("results:",results)
+    print("groundtruth:",groundtruth)
+    
     mapk_list = []
     for idx, (r, k) in enumerate(zip(results, k_list)):
         mapk = average_precision.mapk(groundtruth, r, k=k, multi=True)
@@ -151,48 +198,55 @@ def dataset_mapk(
     return mapk_list, best_config, best_result, best_mapk
 
 def generate_combos(args: argparse.Namespace) -> list:
-    sift_params = {
-        'kp_descriptor': ['sift'],
-        'n_features': args.n_features,
-        'edge_threshold': args.edge_threshold,
-        'n_octave_layers': args.n_octave_layers,
-        'contrast_threshold': args.contrast_threshold,
-        'sigma': args.sigma
-    }
-    orb_params = {
-        'kp_descriptor': ['orb'],
-        'n_features': args.n_features,
-        'edge_threshold': args.edge_threshold,
-        'scale_factor': args.scale_factor,
-        'n_levels': args.n_levels,
-        'WTA_K': args.WTA_K,
-        'score_type': args.score_type,
-        'patch_size': args.patch_size,
-        'fast_threshold': args.fast_threshold
-    }
-    csift_params = {
-        'kp_descriptor': ['color_sift'],
-        'n_features': args.n_features,
-        'edge_threshold': args.edge_threshold,
-        'n_octave_layers': args.n_octave_layers,
-        'contrast_threshold': args.contrast_threshold,
-        'sigma': args.sigma,
-        'sift_mode': args.sift_mode,
-        'use_rootsift': args.use_rootsift
-    }
+    kd = set(args.kp_descriptor) if isinstance(args.kp_descriptor, list) else {args.kp_descriptor}
+    combos = []
 
     def product_dict(**kwargs):
-        keys = kwargs.keys()
-        for instance in itertools.product(*kwargs.values()):
-            yield dict(zip(keys, instance))
-    
-    combo_sift = list(product_dict(**sift_params))
-    combo_orb = list(product_dict(**orb_params))
-    combo_csift = list(product_dict(**csift_params))
+        keys = list(kwargs.keys())
+        vals = [kwargs[k] for k in keys]
+        for inst in itertools.product(*vals):
+            yield dict(zip(keys, inst))
 
-    combos = combo_sift + combo_orb + combo_csift
+    if 'sift' in kd:
+        sift_params = {
+            'kp_descriptor': ['sift'],
+            'n_features': args.n_features,
+            'edge_threshold': args.edge_threshold,
+            'n_octave_layers': args.n_octave_layers,
+            'contrast_threshold': args.contrast_threshold,
+            'sigma': args.sigma
+        }
+        combos += list(product_dict(**sift_params))
+
+    if 'orb' in kd:
+        orb_params = {
+            'kp_descriptor': ['orb'],
+            'n_features': args.n_features,
+            'edge_threshold': args.edge_threshold,
+            'scale_factor': args.scale_factor,
+            'n_levels': args.n_levels,
+            'WTA_K': args.WTA_K,
+            'score_type': args.score_type,
+            'patch_size': args.patch_size,
+            'fast_threshold': args.fast_threshold
+        }
+        combos += list(product_dict(**orb_params))
+
+    if 'color_sift' in kd:
+        csift_params = {
+            'kp_descriptor': ['color_sift'],
+            'n_features': args.n_features,
+            'edge_threshold': args.edge_threshold,
+            'n_octave_layers': args.n_octave_layers,
+            'contrast_threshold': args.contrast_threshold,
+            'sigma': args.sigma,
+            'sift_mode': args.sift_mode,
+            'use_rootsift': args.use_rootsift
+        }
+        combos += list(product_dict(**csift_params))
 
     return combos
+
 
 def main():
     args = parse_config_file(parse_args())
@@ -200,7 +254,7 @@ def main():
 
     db = database2.Database(args.database)
     qs = load_dataset(args.dataset)
-    qs = mask_dataset(args.dataset, qs)
+    #qs = mask_dataset(args.dataset, qs)
 
     if args.mode == 'search':
         best_config = [[] for _ in range(len(args.k))]
@@ -214,9 +268,9 @@ def main():
         grid_search_df = pd.DataFrame(columns=list(combos[0].keys()) + [f'mapk{k}' for k in args.k])
         
         for cfg in tqdm(combos):
-            results = find_match(qs, db, cfg, args.k)
+            results = find_match(qs, db, cfg, args.k, show=True)
 
-            mapk_list, best_config, best_result, best_mapk = dataset_mapk(results, groundtruth,
+            mapk_list, best_config, best_result, best_mapk = dataset_mapk(results, groundtruth,                          #ADAPT!!
                                                                           best_mapk, best_config, best_result,
                                                                           cfg, args.k)
             
