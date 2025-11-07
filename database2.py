@@ -30,7 +30,6 @@ class Database:
         for f in file_list:
             img = cv2.imread(f)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = cv2.medianBlur(img, 3)              # match query preprocessing
             img = self._limit_size(img, 512)          # <- size reduction here
             self.images.append(img)
 
@@ -141,7 +140,7 @@ class Database:
         xs = np.array([kp.pt[0] for kp in kp], dtype=np.float32)
         x_span = float(xs.max() - xs.min()) if len(xs) else 0
         eps = max(20.0, 0.06 * x_span)
-        dbscan = DBSCAN(eps=eps, min_samples=10)
+        dbscan = DBSCAN(eps=eps, min_samples=3)
 
         labels = dbscan.fit_predict(centroids)
         valid = [lab for lab in set(labels) if lab != -1]
@@ -150,34 +149,18 @@ class Database:
             best_id = entries[0][0]
             return [[best_id]]
 
-        # Group by cluster, pick a representative DB id per cluster (most good matches)
-        clusters = {}  # lab -> {'indices': [(db_idx, num_good)], 'sum_good': int, 'xs': []}
+        final_ids = [[] for _ in range(len(valid))]
+        cluster_pos = [0 for _ in range(len(valid))]
+
         for i, (db_idx, num_good, cx, cy) in enumerate(entries):
-            lab = labels[i]
-            if lab == -1:
-                continue
-            info = clusters.setdefault(lab, {'indices': [], 'sum_good': 0, 'xs': []})
-            info['indices'].append((db_idx, num_good))
-            info['sum_good'] += num_good
-            info['xs'].append(cx)
+            final_ids[labels[i]].append(db_idx)
+            cluster_pos[labels[i]] += cx
+        
+        for idx in range(len(valid)): cluster_pos[idx] /= len(final_ids[idx])
 
-        if not clusters:
-            best_id = entries[0][0]
-            return [[best_id]]
+        final_ids, cluster_pos = zip(*sorted(zip(final_ids, cluster_pos), key=lambda x: x[1], reverse=False))
 
-        cluster_list = []
-        for lab, info in clusters.items():
-            rep_db_idx = max(info['indices'], key=lambda t: t[1])[0]  # t=(db_idx, num_good)
-            mean_x = float(np.mean(info['xs']))
-            total_support = info['sum_good']
-            cluster_list.append((lab, rep_db_idx, total_support, mean_x))
-
-        # Keep up to two strongest clusters, order left->right
-        top_by_support = sorted(cluster_list, key=lambda t: t[2], reverse=True)[:2]
-        top_lr = sorted(top_by_support, key=lambda t: t[3])
-
-        final_ids = [[t[1]] for t in top_lr]
-        return final_ids if final_ids else [[-1]]
+        return list(final_ids) if final_ids else [[-1]]
 
 
     def get_similar_simple(self, kp, desc,

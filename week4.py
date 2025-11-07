@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
-
 import database2
 import mask_creation_w3_main
 from keypoints_descriptors import generate_descriptor
@@ -50,7 +49,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--config', type=str)
-    
+
     parser.add_argument('--database', type=str)
     parser.add_argument('--dataset', type=str)
 
@@ -171,16 +170,22 @@ def find_match(qs, db, cfg, k_list, show=False):
 
     for img in qs:
         # build a BGR image for visualization
-        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
+        # bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
 
         kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+        # Cluster descriptors
+
+
         #ranked = db.get_similar(kp, desc) 
-        
-        ranked = [db.get_similar_simple(kp,desc)]
+
+        ranked = db.get_similar(kp,desc)
         print("ranked:", ranked)
         for idx, k in enumerate(k_list):
-            results[idx].append(ranked[:k])
-    
+            subresult = []
+            for r in ranked:
+                subresult.append(r[:k])
+            results[idx].append(subresult)
+
     return results
 """
 def find_match(qs, db, cfg, k_list, show=False):
@@ -213,7 +218,7 @@ def dataset_mapk(
     # Compute MAP@K
     print("results:",results)
     print("groundtruth:",groundtruth)
-    
+
     mapk_list = []
     for idx, (r, k) in enumerate(zip(results, k_list)):
         print("idx, (r, k):", idx, r, k)
@@ -228,6 +233,7 @@ def dataset_mapk(
 def generate_combos(args: argparse.Namespace) -> list:
     kd = set(args.kp_descriptor) if isinstance(args.kp_descriptor, list) else {args.kp_descriptor}
     combos = []
+    arg_keys = []
 
     def product_dict(**kwargs):
         keys = list(kwargs.keys())
@@ -245,6 +251,7 @@ def generate_combos(args: argparse.Namespace) -> list:
             'sigma': args.sigma
         }
         combos += list(product_dict(**sift_params))
+        arg_keys += list(sift_params.keys())
 
     if 'orb' in kd:
         orb_params = {
@@ -254,11 +261,12 @@ def generate_combos(args: argparse.Namespace) -> list:
             'scale_factor': args.scale_factor,
             'n_levels': args.n_levels,
             'WTA_K': args.WTA_K,
-            'score_type': args.score_type,
+            # 'score_type': args.score_type,
             'patch_size': args.patch_size,
             'fast_threshold': args.fast_threshold
         }
         combos += list(product_dict(**orb_params))
+        arg_keys += list(orb_params.keys())
 
     if 'color_sift' in kd:
         csift_params = {
@@ -272,8 +280,10 @@ def generate_combos(args: argparse.Namespace) -> list:
             'use_rootsift': args.use_rootsift
         }
         combos += list(product_dict(**csift_params))
-
-    return combos
+        arg_keys += list(csift_params.keys())
+    
+    arg_keys = list(set(arg_keys))
+    return combos, arg_keys
 
 
 def main():
@@ -291,9 +301,9 @@ def main():
         with open(os.path.join(args.dataset, 'gt_corresps.pkl'), 'rb') as f:
             groundtruth = pickle.load(f)
 
-        combos = generate_combos(args)
+        combos, arg_keys = generate_combos(args)
 
-        grid_search_df = pd.DataFrame(columns=list(combos[0].keys()) + [f'mapk{k}' for k in args.k])
+        grid_search_df = pd.DataFrame(columns=arg_keys + [f'mapk{k}' for k in args.k])
         
         for cfg in tqdm(combos):
             results = find_match(qs, db, cfg, args.k, show=True)
