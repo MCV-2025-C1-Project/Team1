@@ -12,7 +12,6 @@ def apk(actual, predicted, k=10):
         if p in actual:
             num_hits += 1.0
             score += num_hits / (i + 1.0)
-            print("actual, predicted, score:", actual, predicted, score)
     if not actual:
         return 0.0
 
@@ -29,10 +28,8 @@ def mapk(actual, predicted, k=10, multi=False):
         all_apks = []
 
         for actual_img, predicted_img in zip(actual, predicted):
-            print("actual_img, predicted_img:", actual_img, predicted_img)
             # For each painting in the image
             for gt_idx, pred_list in zip(actual_img, predicted_img):
-                print("gt_idx, pred_list", gt_idx, pred_list)
                 all_apks.append(apk([gt_idx], pred_list, k))  # wrap gt_idx as list
 
         return np.mean(all_apks) if all_apks else 0.0

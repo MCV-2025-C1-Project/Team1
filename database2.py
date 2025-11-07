@@ -72,8 +72,6 @@ class Database:
             kp, desc = generate_descriptor(img, self.kp_descriptor, **self.parameters)
             self.descriptors.append(desc)
 
-
-
     def get_similar(self, kp, desc) -> list[list[int]]:
         from tqdm import tqdm
 
@@ -89,79 +87,64 @@ class Database:
             norm = cv2.NORM_HAMMING if W == 2 else cv2.NORM_HAMMING2
             bf = cv2.BFMatcher.create(norm)
         else:
-            return [[-1]]
+            return [-1]
 
         # 2) Collect candidates (per-DB centroid)
         entries = []  # [(db_idx, num_good, cx, cy)]
-        ratio = 0.8        
-        min_good = 10        
-        min_frac_good = 0.08 
-
+        ratio = 0.5
+        min_good = 2
+        min_frac_good = 0.1
 
         # Progress bar around the slowest part: matching vs all DB descriptors
-        for db_idx, db_desc in enumerate(
-            tqdm(self.descriptors, total=len(self.descriptors), desc="Matching DB", leave=False)
-        ):
+        for db_idx, db_desc in enumerate(self.descriptors):
             if db_desc is None or len(db_desc) == 0:
                 continue
 
             matches = bf.knnMatch(desc, db_desc, k=2)
 
-            good = []
+            good_fwd = []
             for pair in matches:
                 if len(pair) < 2:
                     continue
                 m, n = pair
                 if m.distance < ratio * n.distance:
-                    good.append(m)
+                    good_fwd.append(m)
+            
+            matches_bwd = bf.knnMatch(db_desc, desc, k=2)
+
+            good_bwd = []
+            for pair in matches_bwd:
+                if len(pair) < 2:
+                    continue
+                m, n = pair
+                if m.distance < ratio * n.distance:
+                    good_bwd.append(m)
+            
+            good = []
+            bwd_map = {m.queryIdx: m.trainIdx for m in good_bwd}
+            for fwd_match in good_fwd:
+                q_idx = fwd_match.queryIdx
+                t_idx = fwd_match.trainIdx
+
+                if t_idx in bwd_map and bwd_map[t_idx] == q_idx:
+                    good.append(fwd_match)
 
             # gate by absolute and fractional thresholds
             required = max(min_good, int(np.ceil(min_frac_good * max(1, len(matches)))))
             if len(good) < required:
                 continue
 
-            pts = np.float32([kp[m.queryIdx].pt for m in good])
-            cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
-            entries.append((db_idx, len(good), cx, cy))
+            entries.append((db_idx, len(good)))
 
-        if not entries:
-            return [[-1]]
+        if entries is None or len(entries) == 0:
+            return [-1]
 
         # 3) Sort by number of good matches (desc)
         entries.sort(key=lambda e: e[1], reverse=True)
-        centroids = np.float32([[e[2], e[3]] for e in entries])
 
-        # Single painting fallback if too few candidates
-        if len(centroids) < 3:
-            best_id = entries[0][0]
-            return [[best_id]]
+        final_ids = [idx for idx, _ in entries]
 
-        # 4) Cluster centroids (detect multiple paintings)
-        xs = np.array([kp.pt[0] for kp in kp], dtype=np.float32)
-        x_span = float(xs.max() - xs.min()) if len(xs) else 0
-        eps = max(20.0, 0.06 * x_span)
-        dbscan = DBSCAN(eps=eps, min_samples=3)
-
-        labels = dbscan.fit_predict(centroids)
-        valid = [lab for lab in set(labels) if lab != -1]
-
-        if not valid:
-            best_id = entries[0][0]
-            return [[best_id]]
-
-        final_ids = [[] for _ in range(len(valid))]
-        cluster_pos = [0 for _ in range(len(valid))]
-
-        for i, (db_idx, num_good, cx, cy) in enumerate(entries):
-            final_ids[labels[i]].append(db_idx)
-            cluster_pos[labels[i]] += cx
-        
-        for idx in range(len(valid)): cluster_pos[idx] /= len(final_ids[idx])
-
-        final_ids, cluster_pos = zip(*sorted(zip(final_ids, cluster_pos), key=lambda x: x[1], reverse=False))
-
-        return list(final_ids) if final_ids else [[-1]]
-
+        return final_ids
 
     def get_similar_simple(self, kp, desc,
                         ratio=0.75,       # Lowe ratio for SIFT/ORB
@@ -177,8 +160,7 @@ class Database:
         4) Decide: [id] or [id1, id2] or [-1]
         Returns a FLAT list of ints, e.g. [104] or [104, 251] or [-1]
         """
-        import numpy as np
-        import cv2
+
 
         
         # --- guard

@@ -3,7 +3,7 @@ database: "datasets/BBDD"
 dataset: "datasets/qsd1_w4"
 
 # SIFT
-kp_descriptor: ["sift"]
+kp_descriptor: ["sift", "orb"]
 n_features: [500]
 edge_threshold: [10]
 n_octave_layers: [4]
@@ -11,12 +11,12 @@ contrast_threshold: [0.02]
 sigma: [1.6]
 
 # ORB
-# scale_factor: [1.2, 2.0]
-# n_levels: [4, 8, 16]
-# first_level: [0]
-# WTA_K: [2, 3]
-# patch_size: [31]
-# fast_threshold: [20, 30]
+scale_factor: [1.2, 2.0]
+n_levels: [4, 8]
+first_level: [0]
+WTA_K: [2, 3]
+patch_size: [31]
+fast_threshold: [20]
 
 # MAP@K a evaluar
 k: [1,5]
@@ -24,5 +24,3 @@ k: [1,5]
 # Modo y salida
 mode: "search"
 output_csv: "./grid_search_sift.csv"
-
-

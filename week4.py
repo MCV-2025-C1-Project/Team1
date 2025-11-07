@@ -114,15 +114,68 @@ def _limit_size(img: np.ndarray, max_side: int = 512) -> np.ndarray:
         img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     return img
 
-def load_dataset(path: str) -> list[np.ndarray]:
+def apply_mask(img_bgr: np.ndarray, mask: np.ndarray, transparent: bool = True) -> np.ndarray:
+    """
+    Keep only the white region(s) of `mask` in `img_bgr`.
+    If `transparent=True`, return BGRA with outside set to alpha=0.
+    Otherwise return BGR with outside set to black.
+    """
+    # ensure mask is single-channel uint8 the same size as the image
+    if mask.ndim == 3:
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+    if mask.shape[:2] != img_bgr.shape[:2]:
+        mask = cv2.resize(mask, (img_bgr.shape[1], img_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
+
+    bin_mask = (mask > 127).astype(np.uint8)  # 0/1
+
+    if transparent:
+        # BGRA output with alpha = mask
+        out = np.dstack([img_bgr, (bin_mask * 255).astype(np.uint8)])
+    else:
+        # black outside
+        out = img_bgr.copy()
+        out[bin_mask == 0] = 0
+        # Apply homography
+    return out
+
+def split_by_components(img_bgr: np.ndarray, mask: np.ndarray, min_area: int = 5000) -> list[tuple[np.ndarray, np.ndarray]]:
+    """
+    Split an image into separate paintings using connected components on the mask.
+    Returns a list of (cropped_img, cropped_mask) for each component (largest first).
+    """
+    if mask.ndim == 3:
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+    if mask.shape[:2] != img_bgr.shape[:2]:
+        mask = cv2.resize(mask, (img_bgr.shape[1], img_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
+    bin_mask = (mask > 127).astype(np.uint8)
+
+    num, labels, stats, _ = cv2.connectedComponentsWithStats(bin_mask, connectivity=8)
+    comps = []
+    for i in range(1, num):  # skip background
+        x, y, w, h, area = stats[i, 0], stats[i, 1], stats[i, 2], stats[i, 3], stats[i, 4]
+        if area < min_area:
+            continue
+        crop_img  = img_bgr[y:y+h, x:x+w]
+        crop_mask = (labels[y:y+h, x:x+w] == i).astype(np.uint8) * 255
+        comps.append((crop_img, crop_mask))
+    # sort by area (largest first)
+    comps.sort(key=lambda p: p[1].sum(), reverse=True)
+    return comps
+
+def load_dataset(path: str, masks: list) -> list[np.ndarray]:
     images = []
     file_list = sorted(glob.glob(os.path.join(path, '*.jpg')))
-    for f in file_list:
+    for f, mask in zip(file_list, masks):
         img = cv2.imread(f)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        img = cv2.medianBlur(img, 3)
-        img = _limit_size(img, 512) #speed up
-        images.append(img)
+        paintings = []
+        parts = split_by_components(img, mask)
+        for i, (crop_img, crop_mask) in enumerate(parts, 1):
+            crop = apply_mask(crop_img, crop_mask, transparent=False)
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            crop = cv2.medianBlur(crop, 3)
+            crop = _limit_size(crop, 512)
+            paintings.append(crop)
+        images.append(paintings)
     return images
 
 def mask_dataset(path: str, qs: list[np.ndarray]) -> list[np.ndarray]:
@@ -168,25 +221,23 @@ def find_match(qs, db, cfg, k_list, show=False):
     db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
     results = [[] for _ in k_list]
 
-    for img in qs:
-        # build a BGR image for visualization
-        # bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
-
-        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
-        # Cluster descriptors
-
-
-        #ranked = db.get_similar(kp, desc) 
-
-        ranked = db.get_similar(kp,desc)
-        print("ranked:", ranked)
-        for idx, k in enumerate(k_list):
-            subresult = []
-            for r in ranked:
-                subresult.append(r[:k])
-            results[idx].append(subresult)
-
+    for q_idx, q in enumerate(tqdm(qs, desc='Matching query set', leave=False)):
+        parts = q
+        per_query = [[] for _ in k_list]
+        for p_idx, img in enumerate(parts):
+            kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+            if desc is None or len(desc) == 0:
+                ranked = []
+            else:
+                ranked = db.get_similar(kp, desc)
+            
+            for k_idx, k in enumerate(k_list):
+                per_query[k_idx].append(ranked[:k])
+        
+        for k_idx in range(len(k_list)):
+            results[k_idx].append(per_query[k_idx])
     return results
+
 """
 def find_match(qs, db, cfg, k_list, show=False):
     db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
@@ -216,12 +267,9 @@ def dataset_mapk(
     cfg: dict, k_list: list[int]
 ) -> tuple[list]:
     # Compute MAP@K
-    print("results:",results)
-    print("groundtruth:",groundtruth)
 
     mapk_list = []
     for idx, (r, k) in enumerate(zip(results, k_list)):
-        print("idx, (r, k):", idx, r, k)
         mapk = average_precision.mapk(groundtruth, r, k=k, multi=True)
         mapk_list.append(mapk)
         if mapk >= best_mapk[idx]:
@@ -290,8 +338,19 @@ def main():
     args = parse_config_file(parse_args())
     check_args(args)
 
+    if args.mode == 'eval':
+        # masks = get_masks(args.dataset)
+        pass
+    else:
+        masks = []
+        image_files = sorted([f for f in os.listdir('outputs_mask') if f.endswith('.png')])
+        for f in image_files:
+            path = os.path.join('outputs_mask', f)
+            mask = cv2.imread(path)
+            masks.append(mask)
+
     db = database2.Database(args.database)
-    qs = load_dataset(args.dataset)
+    qs = load_dataset(args.dataset, masks)
     #qs = mask_dataset(args.dataset, qs)
 
     if args.mode == 'search':
@@ -305,7 +364,7 @@ def main():
 
         grid_search_df = pd.DataFrame(columns=arg_keys + [f'mapk{k}' for k in args.k])
         
-        for cfg in tqdm(combos):
+        for cfg in tqdm(combos, desc="Grid Search combos"):
             results = find_match(qs, db, cfg, args.k, show=True)
 
             mapk_list, best_config, best_result, best_mapk = dataset_mapk(results, groundtruth,                          #ADAPT!!
