@@ -91,8 +91,8 @@ class Database:
 
         # 2) Collect candidates (per-DB centroid)
         entries = []  # [(db_idx, num_good, cx, cy)]
-        ratio = 0.5
-        min_good = 2
+        ratio = 0.75
+        min_good = 10
         min_frac_good = 0.1
 
         # Progress bar around the slowest part: matching vs all DB descriptors
@@ -131,7 +131,7 @@ class Database:
 
             # gate by absolute and fractional thresholds
             required = max(min_good, int(np.ceil(min_frac_good * max(1, len(matches)))))
-            if len(good) < required:
+            if len(good) < min_good:
                 continue
 
             entries.append((db_idx, len(good)))

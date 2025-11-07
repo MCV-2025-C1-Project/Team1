@@ -151,6 +151,7 @@ def split_by_components(img_bgr: np.ndarray, mask: np.ndarray, min_area: int = 5
 
     num, labels, stats, _ = cv2.connectedComponentsWithStats(bin_mask, connectivity=8)
     comps = []
+    coords = []
     for i in range(1, num):  # skip background
         x, y, w, h, area = stats[i, 0], stats[i, 1], stats[i, 2], stats[i, 3], stats[i, 4]
         if area < min_area:
@@ -158,8 +159,16 @@ def split_by_components(img_bgr: np.ndarray, mask: np.ndarray, min_area: int = 5
         crop_img  = img_bgr[y:y+h, x:x+w]
         crop_mask = (labels[y:y+h, x:x+w] == i).astype(np.uint8) * 255
         comps.append((crop_img, crop_mask))
-    # sort by area (largest first)
-    comps.sort(key=lambda p: p[1].sum(), reverse=True)
+        coords.append(np.array([x, y]))
+
+    coords_array = np.stack(coords, axis=0)
+    diff_x = coords_array[..., 0].max(axis=0) - coords_array[..., 0].min(axis=0)
+    diff_y = coords_array[..., 1].max(axis=0) - coords_array[..., 1].min(axis=0)
+    
+    if (diff_x > diff_y):
+        comps, coords = zip(*sorted(zip(comps, coords), key=lambda p: p[1][0]))
+    else:
+        comps, coords = zip(*sorted(zip(comps, coords), key=lambda p: p[1][1]))
     return comps
 
 def load_dataset(path: str, masks: list) -> list[np.ndarray]:
@@ -380,6 +389,7 @@ def main():
         grid_search_df.to_csv(args.output_csv)
         for config, results, mapk, k in zip(best_config, best_result, best_mapk, args.k):
             print(f"\nFor K = {k}\n")
+            print(f"Groundtruth: {groundtruth}")
             print(f"Best results: {results}")
             print(f"Best config: {config}")
             print(f"Best mapk: {mapk:.4f}")
