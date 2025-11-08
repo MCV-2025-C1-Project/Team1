@@ -80,14 +80,14 @@ class Database:
             return [[-1]]
 
         # 1) Matcher selection
-        if self.kp_descriptor in ('sift', 'color_sift'):
+        if self.kp_descriptor == 'sift':
             bf = cv2.BFMatcher.create(cv2.NORM_L2)
         elif self.kp_descriptor == 'orb':
             W = self.parameters.get('WTA_K', 2)
             norm = cv2.NORM_HAMMING if W == 2 else cv2.NORM_HAMMING2
             bf = cv2.BFMatcher.create(norm)
-        else:
-            return [-1]
+        elif self.kp_descriptor == 'akaze':
+            bf = cv2.BFMatcher.create(cv2.NORM_HAMMING)
 
         # 2) Collect candidates (per-DB centroid)
         entries = []  # [(db_idx, num_good, cx, cy)]

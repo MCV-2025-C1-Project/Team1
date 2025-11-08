@@ -71,9 +71,14 @@ def parse_args():
     parser.add_argument('--patch_size', nargs='+', type=int)
     parser.add_argument('--fast_threshold', nargs='+', type=int)
 
-    # Color SIFT
-    parser.add_argument('--sift_mode', nargs='+', type=str)
-    parser.add_argument('--use_rootsift', nargs='+', type=str2bool)
+    # AZAKE
+    #parser.add_argument('--descriptor_type', nargs='+', type=int)
+    parser.add_argument('--descriptor_size', nargs='+', type=int)
+    parser.add_argument('--descriptor_channels', nargs='+', type=int)
+    parser.add_argument('--threshold', nargs='+', type=float)
+    parser.add_argument('--n_octaves', nargs='+', type=int)
+    #parser.add_argument('--diffusivity', nargs='+', type=int)
+
 
     parser.add_argument('-k', nargs='+', type=int)
 
@@ -325,19 +330,19 @@ def generate_combos(args: argparse.Namespace) -> list:
         combos += list(product_dict(**orb_params))
         arg_keys += list(orb_params.keys())
 
-    if 'color_sift' in kd:
-        csift_params = {
-            'kp_descriptor': ['color_sift'],
-            'n_features': args.n_features,
-            'edge_threshold': args.edge_threshold,
+    if 'akaze' in kd:
+        akaze_params = {
+            'kp_descriptor': ['akaze'],
+            #'descriptor_type': args.descriptor_type,
+            'descriptor_size': args.descriptor_size,
+            'descriptor_channels': args.descriptor_channels,
+            'threshold': args.threshold,
+            'n_octaves': args.n_octaves,
             'n_octave_layers': args.n_octave_layers,
-            'contrast_threshold': args.contrast_threshold,
-            'sigma': args.sigma,
-            'sift_mode': args.sift_mode,
-            'use_rootsift': args.use_rootsift
+            #'diffusivity': args.diffusivity
         }
-        combos += list(product_dict(**csift_params))
-        arg_keys += list(csift_params.keys())
+        combos += list(product_dict(**akaze_params))
+        arg_keys += list(akaze_params.keys())
     
     arg_keys = list(set(arg_keys))
     return combos, arg_keys

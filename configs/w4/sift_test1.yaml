@@ -1,6 +1,6 @@
 # Rutas
-database: "datasets/BBDD"
-dataset: "datasets/qsd1_w4"
+database: "../BBDD"
+dataset: "../qsd1_w4"
 
 # SIFT
 kp_descriptor: ["orb"]

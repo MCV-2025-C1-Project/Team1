@@ -1,4 +1,4 @@
-from .color_sift import color_sift_descriptor
+from .akaze import akaze_descriptor
 from .sift import sift_descriptor
 from .orb import orb_descriptor
 
@@ -14,7 +14,7 @@ def generate_descriptor(img: np.ndarray, descriptor: Literal['sift', 'orb', 'col
         orb_keys = orb_descriptor.__code__.co_varnames[:orb_descriptor.__code__.co_argcount]
         orb_kwargs = {key: kwargs[key] for key in orb_keys if key in kwargs}
         return orb_descriptor(img, **orb_kwargs)
-    elif descriptor == 'color_sift':
-        color_sift_keys = color_sift_descriptor.__code__.co_varnames[:color_sift_descriptor.__code__.co_argcount]
-        color_sift_kwargs = {key: kwargs[key] for key in color_sift_keys if key in kwargs}
-        return color_sift_descriptor(img, **color_sift_kwargs)
+    elif descriptor == 'akaze':
+            akaze_keys = akaze_descriptor.__code__.co_varnames[:akaze_descriptor.__code__.co_argcount]
+            akaze_kwargs = {key: kwargs[key] for key in akaze_keys if key in kwargs}
+            return akaze_descriptor(img, **akaze_kwargs)
