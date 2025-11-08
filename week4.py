@@ -6,12 +6,17 @@ import os
 import pickle
 
 import cv2
+import imageio
 import numpy as np
 import pandas as pd
 import yaml
 from tqdm import tqdm
+
 import database2
 import mask_creation_w3_main
+from background.group2.bckg_rmv import remove_background_morphological_gradient
+from background.group2.descriptors import preprocess_image
+from background.group2.image_split import split_images
 from keypoints_descriptors import generate_descriptor
 from metrics import average_precision
 
@@ -79,6 +84,10 @@ def parse_args():
     parser.add_argument('--n_octaves', nargs='+', type=int)
     #parser.add_argument('--diffusivity', nargs='+', type=int)
 
+    # Matchers
+    parser.add_argument('--lowe_ratio', nargs='+', type=float)
+    parser.add_argument('--min_good', nargs='+', type=int)
+    parser.add_argument('--match_distance', nargs='+', type=str)
 
     parser.add_argument('-k', nargs='+', type=int)
 
@@ -231,19 +240,19 @@ def mask_dataset(path: str, qs: list[np.ndarray]) -> list[np.ndarray]:
     
     return results"""
 
-def find_match(qs, db, cfg, k_list, show=False):
-    db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
-    results = [[] for _ in k_list]
+def find_match(qs: list[list[np.ndarray]], db: database2.Database, cfg: dict[str, any], k_list: list[int], show=False):
+    db.change_match_params(lowe_ratio=cfg['lowe_ratio'], min_good=cfg['min_good'], match_distance=cfg['match_distance'])
 
-    for q_idx, q in enumerate(tqdm(qs, desc='Matching query set', leave=False)):
+    results = [[] for _ in k_list]
+    for q in tqdm(qs, desc='Matching query set', leave=False):
         parts = q
         per_query = [[] for _ in k_list]
-        for p_idx, img in enumerate(parts):
-            kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+        for img in parts:
+            desc = img
             if desc is None or len(desc) == 0:
                 ranked = []
             else:
-                ranked = db.get_similar(kp, desc)
+                ranked = db.get_similar(desc)
             
             for k_idx, k in enumerate(k_list):
                 per_query[k_idx].append(ranked[:k])
@@ -252,36 +261,11 @@ def find_match(qs, db, cfg, k_list, show=False):
             results[k_idx].append(per_query[k_idx])
     return results
 
-"""
-def find_match(qs, db, cfg, k_list, show=False):
-    db.change_params(cfg['kp_descriptor'], cfg, autoprocess=True)
-    results = [[] for _ in k_list]
-
-    for img in tqdm(qs, total=len(qs), desc="Matching queries", unit="img", leave=False):
-        # build a BGR image for visualization
-        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img
-
-        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
-        # ranked = db.get_similar(kp, desc)
-        ranked = db.get_similar_simple(kp, desc)
-
-        # if clusters, take the first cluster
-        print("ranked:", ranked)
-        if isinstance(ranked, list) and ranked and isinstance(ranked[0], list):
-            ranked = ranked[0]
-            print("ranked_after",ranked)
-        for idx, k in enumerate(k_list):
-            results[idx].append(ranked[:k])
-
-    return results"""
-
 def dataset_mapk(
     results: list, groundtruth: list,
     best_mapk: list, best_config: list, best_result: list,
     cfg: dict, k_list: list[int]
 ) -> tuple[list]:
-    # Compute MAP@K
-
     mapk_list = []
     for idx, (r, k) in enumerate(zip(results, k_list)):
         mapk = average_precision.mapk(groundtruth, r, k=k, multi=True)
@@ -310,7 +294,10 @@ def generate_combos(args: argparse.Namespace) -> list:
             'edge_threshold': args.edge_threshold,
             'n_octave_layers': args.n_octave_layers,
             'contrast_threshold': args.contrast_threshold,
-            'sigma': args.sigma
+            'sigma': args.sigma,
+            'lowe_ratio': args.lowe_ratio,
+            'min_good': args.min_good,
+            'match_distance': ['l2', 'l2sqr']
         }
         combos += list(product_dict(**sift_params))
         arg_keys += list(sift_params.keys())
@@ -323,9 +310,11 @@ def generate_combos(args: argparse.Namespace) -> list:
             'scale_factor': args.scale_factor,
             'n_levels': args.n_levels,
             'WTA_K': args.WTA_K,
-            # 'score_type': args.score_type,
             'patch_size': args.patch_size,
-            'fast_threshold': args.fast_threshold
+            'fast_threshold': args.fast_threshold,
+            'lowe_ratio': args.lowe_ratio,
+            'min_good': args.min_good,
+            'match_distance': ['hamming']
         }
         combos += list(product_dict(**orb_params))
         arg_keys += list(orb_params.keys())
@@ -339,6 +328,9 @@ def generate_combos(args: argparse.Namespace) -> list:
             'threshold': args.threshold,
             'n_octaves': args.n_octaves,
             'n_octave_layers': args.n_octave_layers,
+            'lowe_ratio': args.lowe_ratio,
+            'min_good': args.min_good,
+            'match_distance': ['hamming']
             #'diffusivity': args.diffusivity
         }
         combos += list(product_dict(**akaze_params))
@@ -347,13 +339,99 @@ def generate_combos(args: argparse.Namespace) -> list:
     arg_keys = list(set(arg_keys))
     return combos, arg_keys
 
+def extract_final_mask(res):
+    import numpy as np
+    if isinstance(res, dict):
+        for key in ('fm', 'final_mask', 'mask', 'pred_mask'):
+            if key in res:
+                return res[key]
+    if isinstance(res, (list, tuple)):
+        candidates = [-1, 7, 3, 1]
+        for k in candidates:
+            if -len(res) <= k < len(res):
+                x = res[k]
+                if isinstance(x, np.ndarray) and x.ndim == 2:
+                    return x
+        arrays2d = [x for x in res if isinstance(x, np.ndarray) and x.ndim == 2]
+        if arrays2d:
+            return arrays2d[-1]
+    raise ValueError("No se pudo extraer la máscara final de 'res'.")
+
+def get_masks(dataset_path):
+    masks = []
+    image_files = sorted([f for f in os.listdir(dataset_path) if f.endswith('.jpg')])
+    for idx, image_file in enumerate(image_files):
+        image_path = os.path.join(dataset_path, image_file)
+        im = imageio.imread(image_path)  # RGB
+        im = _limit_size(im, max_side=512)
+
+        _, splitted = split_images(preprocess_image(im))   # (flag, parts or original)
+
+        # Normalize to list of parts
+        parts = list(splitted) if isinstance(splitted, (list, tuple)) else [splitted]
+
+        # Optional: better labels if vertical split is later detected
+        part_labels = ["izquierda", "derecha"][:len(parts)]
+
+        # 3️⃣ Procesar cada subimagen individualmente
+        results = []  # ✅ keep only one initialization
+        for i, part in enumerate(parts):
+            result = remove_background_morphological_gradient(part)
+            results.append(result)
+
+        # 4️⃣ Combinar máscaras (respetando orientación)
+        if len(results) == 1:
+            fm = extract_final_mask(results[0])
+            pred_bool = (fm > 0) if fm.dtype != bool else fm
+        else:
+            # 1) Resize each predicted mask back to its part size
+            resized_masks = []
+            for part, r in zip(parts, results):
+                fm = extract_final_mask(r)
+                fm_bool = (fm > 0) if fm.dtype != bool else fm
+                ph, pw = part.shape[:2]
+                fm_res = cv2.resize(fm_bool.astype(np.uint8), (pw, ph), interpolation=cv2.INTER_NEAREST).astype(bool)
+                resized_masks.append(fm_res)
+
+            # 2) Decide whether the split is horizontal or vertical by part shapes
+            h0, w0 = parts[0].shape[:2]
+            h1, w1 = parts[1].shape[:2]
+
+            if h0 == h1:
+                pred_bool = np.hstack(resized_masks)   # horizontal (left|right)
+            elif w0 == w1:
+                pred_bool = np.vstack(resized_masks)   # vertical (top over bottom)
+                part_labels = ["arriba", "abajo"]      # ✅ optional relabel
+            else:
+                # Rare fallback: pad along height and hstack
+                max_h = max(m.shape[0] for m in resized_masks)
+                padded = [np.pad(m, ((0, max_h - m.shape[0]), (0, 0)), constant_values=False) if m.shape[0] < max_h else m
+                        for m in resized_masks]
+                pred_bool = np.hstack(padded)
+
+        base = os.path.splitext(image_file)[0]
+
+        # Save mask
+        mask_uint8 = pred_bool.astype(np.uint8) * 255
+        os.makedirs("outputs_mask", exist_ok=True)
+        save_mask_path = os.path.join("outputs_mask", f"{base}_mask.png")
+        imageio.imwrite(save_mask_path, mask_uint8)
+        print(f"✅ Saved binary mask: {save_mask_path}")
+        masks.append(mask_uint8)
+    return masks
 
 def main():
     args = parse_config_file(parse_args())
     check_args(args)
 
     if args.mode == 'eval':
-        # masks = get_masks(args.dataset)
+        masks = get_masks(args.dataset)
+        # masks = []
+        # image_files = sorted([f for f in os.listdir('outputs_mask') if f.endswith('.png')])
+        # for f in image_files:
+        #     path = os.path.join('outputs_mask', f)
+        #     mask = cv2.imread(path)
+        #     masks.append(mask)
         pass
     else:
         masks = []
@@ -378,10 +456,34 @@ def main():
 
         grid_search_df = pd.DataFrame(columns=arg_keys + [f'mapk{k}' for k in args.k])
         
-        for cfg in tqdm(combos, desc="Grid Search combos"):
-            results = find_match(qs, db, cfg, args.k, show=True)
+        db.change_desc_params(combos[0]['kp_descriptor'], combos[0], autoprocess=True)
 
-            mapk_list, best_config, best_result, best_mapk = dataset_mapk(results, groundtruth,                          #ADAPT!!
+        q_desc = []
+        for q in qs:
+            parts = q
+            subq_kp = []
+            for img in parts:
+                kp, desc = generate_descriptor(img, combos[0]['kp_descriptor'], **combos[0])
+                subq_kp.append(desc)
+            q_desc.append(subq_kp)
+        last_desc = combos[0]['kp_descriptor']
+
+        for cfg in tqdm(combos, desc="Grid Search combos"):
+            if last_desc != cfg['kp_descriptor']:
+                db.change_desc_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+                q_desc = []
+                for q in qs:
+                    parts = q
+                    subq_kp = []
+                    for img in parts:
+                        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+                        subq_kp.append(desc)
+                    q_desc.append(subq_kp)
+                last_desc = cfg['kp_descriptor']
+
+            results = find_match(q_desc, db, cfg, args.k, show=True)
+
+            mapk_list, best_config, best_result, best_mapk = dataset_mapk(results, groundtruth,
                                                                           best_mapk, best_config, best_result,
                                                                           cfg, args.k)
             
@@ -400,9 +502,19 @@ def main():
             print(f"Best mapk: {mapk:.4f}")
 
     elif args.mode == 'eval':
-        combos = generate_combos(args)
+        combos, _ = generate_combos(args)
         cfg = combos[0]
-        results = find_match(qs, db, cfg, args.k)
+        db.change_desc_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+        db.change_match_params(lowe_ratio=cfg['lowe_ratio'], min_good=cfg['min_good'], match_distance=cfg['match_distance'])
+        q_desc = []
+        for q in qs:
+            parts = q
+            subq_kp = []
+            for img in parts:
+                kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+                subq_kp.append(desc)
+            q_desc.append(subq_kp)
+        results = find_match(q_desc, db, cfg, args.k)
 
         for result in results:
             with open(args.output_pkl, 'wb') as f:

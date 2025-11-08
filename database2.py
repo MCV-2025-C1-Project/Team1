@@ -17,6 +17,8 @@ class Database:
         # Active descriptor family and its parameters (set via change_params)
         self.kp_descriptor = None
         self.parameters = {}
+        self.lowe_ratio = 0.75
+        self.min_good = 10
 
         # Load database images immediately, then precompute descriptors
         self.load_db(path)
@@ -45,7 +47,7 @@ class Database:
             img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         return img
     
-    def change_params(self, kp_descriptor: str | None = None, parameters: dict | None = None, autoprocess: bool = False):
+    def change_desc_params(self, kp_descriptor: str | None = None, parameters: dict | None = None, autoprocess: bool = False):
         """
         Update the active keypoint/descriptor family and its parameters.
         If `autoprocess` is True, recompute descriptors for the whole DB.
@@ -56,6 +58,15 @@ class Database:
             self.parameters = parameters
         if autoprocess:
             self.process()
+
+    def change_match_params(self, lowe_ratio: float = None, min_good: int = None, match_distance: str = None):
+        if lowe_ratio:
+            self.lowe_ratio = lowe_ratio
+        if min_good:
+            self.min_good = min_good
+        if match_distance:
+            distances_map = {'l2': cv2.NORM_L2, 'l2sqr': cv2.NORM_L2SQR, 'hamming': cv2.NORM_HAMMING}
+            self.match_distance = distances_map[match_distance]
 
     def process(self):
         """Regenerate descriptors for the entire database with current parameters."""
@@ -72,16 +83,12 @@ class Database:
             kp, desc = generate_descriptor(img, self.kp_descriptor, **self.parameters)
             self.descriptors.append(desc)
 
-    def get_similar(self, kp, desc) -> list[list[int]]:
-        from tqdm import tqdm
-
-        # --- Guard against blank/degenerate queries ---
-        if kp is None or len(kp) == 0 or desc is None or len(desc) == 0:
+    def get_similar(self, desc) -> list[list[int]]:
+        if desc is None or len(desc) == 0:
             return [[-1]]
 
-        # 1) Matcher selection
         if self.kp_descriptor == 'sift':
-            bf = cv2.BFMatcher.create(cv2.NORM_L2)
+            bf = cv2.BFMatcher.create(self.match_distance)
         elif self.kp_descriptor == 'orb':
             W = self.parameters.get('WTA_K', 2)
             norm = cv2.NORM_HAMMING if W == 2 else cv2.NORM_HAMMING2
@@ -89,13 +96,7 @@ class Database:
         elif self.kp_descriptor == 'akaze':
             bf = cv2.BFMatcher.create(cv2.NORM_HAMMING)
 
-        # 2) Collect candidates (per-DB centroid)
-        entries = []  # [(db_idx, num_good, cx, cy)]
-        ratio = 0.75
-        min_good = 10
-        min_frac_good = 0.1
-
-        # Progress bar around the slowest part: matching vs all DB descriptors
+        entries = []
         for db_idx, db_desc in enumerate(self.descriptors):
             if db_desc is None or len(db_desc) == 0:
                 continue
@@ -107,7 +108,7 @@ class Database:
                 if len(pair) < 2:
                     continue
                 m, n = pair
-                if m.distance < ratio * n.distance:
+                if m.distance < self.lowe_ratio * n.distance:
                     good_fwd.append(m)
             
             matches_bwd = bf.knnMatch(db_desc, desc, k=2)
@@ -117,7 +118,7 @@ class Database:
                 if len(pair) < 2:
                     continue
                 m, n = pair
-                if m.distance < ratio * n.distance:
+                if m.distance < self.lowe_ratio * n.distance:
                     good_bwd.append(m)
             
             good = []
@@ -129,9 +130,7 @@ class Database:
                 if t_idx in bwd_map and bwd_map[t_idx] == q_idx:
                     good.append(fwd_match)
 
-            # gate by absolute and fractional thresholds
-            required = max(min_good, int(np.ceil(min_frac_good * max(1, len(matches)))))
-            if len(good) < min_good:
+            if len(good) < self.min_good:
                 continue
 
             entries.append((db_idx, len(good)))
@@ -139,7 +138,6 @@ class Database:
         if entries is None or len(entries) == 0:
             return [-1]
 
-        # 3) Sort by number of good matches (desc)
         entries.sort(key=lambda e: e[1], reverse=True)
 
         final_ids = [idx for idx, _ in entries]
@@ -147,11 +145,11 @@ class Database:
         return final_ids
 
     def get_similar_simple(self, kp, desc,
-                        ratio=0.75,       # Lowe ratio for SIFT/ORB
-                        top_k=20,         # how many best distances per DB to aggregate
-                        min_good=10,      # minimum good matches to consider a DB a candidate
-                        dominance=1.4,    # how many times top1 count must exceed top2 to be "clearly best"
-                        mean_gap=0.05):   # relative gap (12%) on mean distance to call it "clearly better"
+                        ratio=0.75,
+                        top_k=20,
+                        min_good=10,
+                        dominance=1.4,
+                        mean_gap=0.05):
         """
         Very simple retrieval:
         1) BFMatcher + Lowe ratio
@@ -160,15 +158,10 @@ class Database:
         4) Decide: [id] or [id1, id2] or [-1]
         Returns a FLAT list of ints, e.g. [104] or [104, 251] or [-1]
         """
-
-
-        
-        # --- guard
         if kp is None or len(kp) == 0 or desc is None or len(desc) == 0:
             return [-1]
 
-        # matcher
-        if self.kp_descriptor in ('sift', 'color_sift'):
+        if self.kp_descriptor in ('sift'):
             bf = cv2.BFMatcher.create(cv2.NORM_L2)
         elif self.kp_descriptor == 'orb':
             W = self.parameters.get('WTA_K', 2)
@@ -177,13 +170,11 @@ class Database:
         else:
             return [-1]
 
-        # collect simple stats per DB
-        stats = []  # (db_idx, good_count, mean_bestK)
+        stats = []
         for db_idx, db_desc in enumerate(self.descriptors):
             if db_desc is None or len(db_desc) == 0:
                 continue
 
-            # knn matches against this DB
             m2 = bf.knnMatch(desc, db_desc, k=2)
             good = []
             for pair in m2:
@@ -196,7 +187,6 @@ class Database:
             if len(good) < min_good:
                 continue
 
-            # take K best distances (smaller is better)
             good = np.sort(np.array(good, dtype=np.float32))
             mean_best = float(good[:top_k].mean()) if len(good) > 0 else 1e9
             stats.append((db_idx, len(good), mean_best))
@@ -204,34 +194,23 @@ class Database:
         if not stats:
             return [-1]
 
-        # sort: more good matches first, then smaller mean distance
         stats.sort(key=lambda t: (-t[1], t[2]))
 
-        # decision rules
         if len(stats) == 1:
             return [stats[0][0]]
 
-        # unpack top entries
         id1, c1, m1 = stats[0]
         id2, c2, m2 = stats[1]
         c3 = stats[2][1] if len(stats) > 2 else 0
         m3 = stats[2][2] if len(stats) > 2 else m2 * (1.0 / (1.0 - mean_gap))  # safe default
 
-        # 1) single clear winner?
-        #    - top1 has many more matches than top2, OR
-        #    - top1's mean distance is clearly smaller (by mean_gap)
         if (c1 >= dominance * max(1, c2)) and (m1 <= (1.0 - mean_gap) * m2):
             return [id1]
 
-        # 2) two stand out vs the rest?
-        #    - both have enough matches
-        #    - and either their means are clearly better than #3, or counts stand out vs #3
         two_good_enough = (c1 >= min_good and c2 >= min_good)
         two_better_than_rest = (m1 <= (1.0 - mean_gap) * m3) or (m2 <= (1.0 - mean_gap) * m3) \
                             or (c1 >= dominance * max(1, c3)) or (c2 >= dominance * max(1, c3))
         if two_good_enough and two_better_than_rest:
-            # return left->right order is not relevant here, so keep best first
             return [id1, id2]
 
-        # 3) otherwise: everything looks similar → no confident decision
         return [-1]

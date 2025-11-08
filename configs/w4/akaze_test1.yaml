@@ -1,6 +1,6 @@
 # Rutas
-database: "../BBDD"
-dataset: "../qsd1_w4"
+database: "datasets/BBDD"
+dataset: "datasets/qsd1_w4"
 
 # AKAZE
 kp_descriptor: ["akaze"]
@@ -10,10 +10,15 @@ threshold: [0.001]        # detection threshold
 n_octaves: [4]
 n_octave_layers: [4]
 
+# Matcher
+lowe_ratio: [0.75]
+min_good: [20]
+match_distance: ['hamming']
+
 # MAP@K a evaluar
 k: [1,5]
 
 # Modo y salida
 mode: "search"
-output_csv: "./grid_search_sift.csv"
+output_csv: "./akaze_test2.csv"
 
