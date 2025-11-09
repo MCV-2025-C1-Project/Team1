@@ -85,6 +85,10 @@ In case you need help to execute or check the default values run:
 ```bash
 python week2.py --help
 ```
+
+### Week 3
+### Week 4
+
 ## Week 1
 
 During the first week, our objective was to design an image descriptor and explore different configurations to determine the most effective approach for the painting similarity matching task. Following our instructors’ guidelines, we built descriptors based on concatenated 1D color histograms and evaluated multiple color spaces, numbers of bins, distance metrics, and preprocessing strategies. To ensure a fair and comprehensive comparison, we conducted a grid search over all these parameters to identify the configuration that delivered the most reliable and discriminative results.
@@ -94,6 +98,7 @@ During the first week, our objective was to design an image descriptor and explo
 During the second week, our objective was to implement a new method for computing histograms by dividing images into blocks to calculate local histograms. Additionally, we received a new set of images that included backgrounds, and our task was to develop a method for background removal. Our approach consisted of estimating the average color of the background, isolating the largest connected component, filling the gaps within that component, and finally identifying the largest square region corresponding to the object of interest. With the background successfully removed using this mask, we were then able to process the images with backgrounds through the updated retrieval system.
 
 ## Week 3
+## Week 4
 
 ## Team Members
 This is the awesome team who collaborated in this project:
