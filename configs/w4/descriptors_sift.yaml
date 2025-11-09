@@ -1,0 +1,24 @@
+#Rutas
+database: "datasets/BBDD"
+dataset: "datasets/qsd1_w4"
+
+kp_descriptor: ["sift"]
+#SIFT
+
+n_features: [500, 800]
+edge_threshold: [5, 10]
+n_octave_layers: [2, 4]
+contrast_threshold: [0.01, 0.02]
+sigma: [1.2, 1.6]
+
+# Matchers
+lowe_ratio: [0.75]
+min_good: [10]
+match_distance: ["l2"]
+
+#MAP@K a evaluar
+k: [1]
+
+# Modo y salida
+mode: "search"
+output_csv: "./grid_search_sift.csv"

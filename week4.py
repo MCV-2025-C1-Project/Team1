@@ -88,6 +88,7 @@ def parse_args():
     parser.add_argument('--lowe_ratio', nargs='+', type=float)
     parser.add_argument('--min_good', nargs='+', type=int)
     parser.add_argument('--match_distance', nargs='+', type=str)
+    parser.add_argument('--max_size', nargs='+', type=int)
 
     parser.add_argument('-k', nargs='+', type=int)
 
@@ -122,7 +123,7 @@ def parse_args():
 def _limit_size(img: np.ndarray, max_side: int = 512) -> np.ndarray:
     h, w = img.shape[:2]
     ms = max(h, w)
-    if ms > max_side:
+    if max_side > 0 and ms > max_side:
         scale = max_side / ms
         img = cv2.GaussianBlur(img, (3, 3), 1)
         img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
@@ -185,7 +186,7 @@ def split_by_components(img_bgr: np.ndarray, mask: np.ndarray, min_area: int = 5
         comps, coords = zip(*sorted(zip(comps, coords), key=lambda p: p[1][1]))
     return comps
 
-def load_dataset(path: str, masks: list) -> list[np.ndarray]:
+def load_dataset(path: str, masks: list, max_size: int) -> list[np.ndarray]:
     images = []
     file_list = sorted(glob.glob(os.path.join(path, '*.jpg')))
     for f, mask in zip(file_list, masks):
@@ -196,7 +197,7 @@ def load_dataset(path: str, masks: list) -> list[np.ndarray]:
             crop = apply_mask(crop_img, crop_mask, transparent=False)
             crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             crop = cv2.medianBlur(crop, 3)
-            crop = _limit_size(crop, 512)
+            crop = _limit_size(crop, max_size)
             paintings.append(crop)
         images.append(paintings)
     return images
@@ -297,7 +298,8 @@ def generate_combos(args: argparse.Namespace) -> list:
             'sigma': args.sigma,
             'lowe_ratio': args.lowe_ratio,
             'min_good': args.min_good,
-            'match_distance': ['l2', 'l2sqr']
+            'match_distance': ['l2'],
+            'max_size': args.max_size
         }
         combos += list(product_dict(**sift_params))
         arg_keys += list(sift_params.keys())
@@ -314,7 +316,8 @@ def generate_combos(args: argparse.Namespace) -> list:
             'fast_threshold': args.fast_threshold,
             'lowe_ratio': args.lowe_ratio,
             'min_good': args.min_good,
-            'match_distance': ['hamming']
+            'match_distance': ['hamming'],
+            'max_size': args.max_size
         }
         combos += list(product_dict(**orb_params))
         arg_keys += list(orb_params.keys())
@@ -330,8 +333,9 @@ def generate_combos(args: argparse.Namespace) -> list:
             'n_octave_layers': args.n_octave_layers,
             'lowe_ratio': args.lowe_ratio,
             'min_good': args.min_good,
-            'match_distance': ['hamming']
-            #'diffusivity': args.diffusivity
+            'match_distance': ['hamming'],
+            #'diffusivity': args.diffusivity,
+            'max_size': args.max_size
         }
         combos += list(product_dict(**akaze_params))
         arg_keys += list(akaze_params.keys())
@@ -441,9 +445,8 @@ def main():
             mask = cv2.imread(path)
             masks.append(mask)
 
-    db = database2.Database(args.database)
-    qs = load_dataset(args.dataset, masks)
-    #qs = mask_dataset(args.dataset, qs)
+    db = database2.Database(args.database, 512)
+    qs = load_dataset(args.dataset, masks, 512)
 
     if args.mode == 'search':
         best_config = [[] for _ in range(len(args.k))]
@@ -469,17 +472,26 @@ def main():
         last_desc = combos[0]['kp_descriptor']
 
         for cfg in tqdm(combos, desc="Grid Search combos"):
-            if last_desc != cfg['kp_descriptor']:
-                db.change_desc_params(cfg['kp_descriptor'], cfg, autoprocess=True)
-                q_desc = []
-                for q in qs:
-                    parts = q
-                    subq_kp = []
-                    for img in parts:
-                        kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
-                        subq_kp.append(desc)
-                    q_desc.append(subq_kp)
-                last_desc = cfg['kp_descriptor']
+            masks = []
+            image_files = sorted([f for f in os.listdir('outputs_mask') if f.endswith('.png')])
+            for f in image_files:
+                path = os.path.join('outputs_mask', f)
+                mask = cv2.imread(path)
+                masks.append(mask)
+            
+            db = database2.Database(args.database, cfg['max_size'])
+            qs = load_dataset(args.dataset, masks, cfg['max_size'])
+            
+            db.change_desc_params(cfg['kp_descriptor'], cfg, autoprocess=True)
+            q_desc = []
+            for q in qs:
+                parts = q
+                subq_kp = []
+                for img in parts:
+                    kp, desc = generate_descriptor(img, cfg['kp_descriptor'], **cfg)
+                    subq_kp.append(desc)
+                q_desc.append(subq_kp)
+            last_desc = cfg['kp_descriptor']
 
             results = find_match(q_desc, db, cfg, args.k, show=True)
 

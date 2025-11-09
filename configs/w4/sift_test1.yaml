@@ -5,35 +5,36 @@ dataset: "datasets/qsd1_w4"
 # General
 kp_descriptor: ["sift", "orb", "akaze"]
 n_features: [500]
-edge_threshold: [10]
+edge_threshold: [5]
+max_size: [0, 32, 64, 256, 512, 1024]
 
 # SIFT
 n_octave_layers: [4]
-contrast_threshold: [0.02]
-sigma: [1.6]
+contrast_threshold: [0.01]
+sigma: [1.2]
 
 # ORB
 scale_factor: [1.2]
-n_levels: [8]
+n_levels: [6]
 first_level: [0]
 WTA_K: [3]
-patch_size: [31]
+patch_size: [41]
 fast_threshold: [20]
 
 # Akaze
 descriptor_size: [0]
 descriptor_channels: [3]
-threshold: [0.001]
-n_octaves: [8]
+threshold: [0.0001]
+n_octaves: [4]
 
 # Matchers
-lowe_ratio: [0.25, 0.5, 0.75, 1.0]
-min_good: [5, 10, 15, 20, 50, 100]
-match_distance: ["l2", "l2sqr"]
+lowe_ratio: [0.75]
+min_good: [10]
+match_distance: ["l2"]
 
 # MAP@K a evaluar
 k: [1, 5]
 
 # Modo y salida
 mode: "search"
-output_csv: "results/w4/grid_search_matcher.csv"
+output_csv: "results/w4/size_test.csv"

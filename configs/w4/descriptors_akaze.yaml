@@ -1,0 +1,25 @@
+#Rutas
+database: "datasets/BBDD"
+dataset: "datasets/qsd1_w4"
+
+kp_descriptor: ["sift", "akaze", "orb"]
+
+#AKAZE
+descriptor_size: [0] # 0 = full size for MLDB
+descriptor_channels: [3] # typically 1, 2, or 3 for MLDB
+threshold: [0.001, 0.005, 0.0001] # detection threshold
+n_octaves: [8]
+n_octave_layers: [8]
+
+# Matchers
+lowe_ratio: [0.75]
+min_good: [10]
+match_distance: ["l2", "l2sqr"]
+
+#MAP@K a evaluar
+
+k: [1]
+
+# Modo y salida
+mode: "search"
+output_csv: "./grid_search_akaze.csv"

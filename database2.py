@@ -9,7 +9,7 @@ from keypoints_descriptors import generate_descriptor
 
 
 class Database:
-    def __init__(self, path: str):
+    def __init__(self, path: str, max_size: int):
         # In-memory storage for grayscale images and their descriptors
         self.images = []
         self.descriptors = []
@@ -21,10 +21,10 @@ class Database:
         self.min_good = 10
 
         # Load database images immediately, then precompute descriptors
-        self.load_db(path)
+        self.load_db(path, max_size)
         #self.process()
 
-    def load_db(self, path: str):
+    def load_db(self, path: str, max_size: int):
         """Load all .jpg images from `path` as grayscale, preprocessed and size-capped."""
         self.images = []
         pattern = os.path.join(path, '*.jpg')
@@ -32,7 +32,7 @@ class Database:
         for f in file_list:
             img = cv2.imread(f)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            img = self._limit_size(img, 512)          # <- size reduction here
+            img = self._limit_size(img, max_size)          # <- size reduction here
             self.images.append(img)
 
     @staticmethod
@@ -40,7 +40,7 @@ class Database:
         """Light blur + downscale so the longest side is <= max_side."""
         h, w = img.shape[:2]
         ms = max(h, w)
-        if ms > max_side:
+        if max_side > 0 and ms > max_side:
             scale = max_side / ms
             # blur before strong downscale to reduce aliasing
             img = cv2.GaussianBlur(img, (3, 3), 1)
