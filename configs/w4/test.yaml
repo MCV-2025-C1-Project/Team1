@@ -1,0 +1,19 @@
+database: "datasets/BBDD"
+dataset: "datasets/qst1_w4"
+
+kp_descriptor: ["akaze"]
+
+descriptor_size: [0]
+descriptor_channels: [3]
+threshold: [0.0001]
+n_octaves: [8]
+n_octave_layers: [8]
+
+lowe_ratio: [0.75]
+min_good: [10]
+match_distance: ["hamming"]
+
+k: [1]
+
+mode: "eval"
+output_pkl: "results/w4/result.pkl"
