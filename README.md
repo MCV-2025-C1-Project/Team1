@@ -1,7 +1,7 @@
 # C1 Project
 Welcome to the Team1's project of the C1 course from the MCV 25-26!
 
-With this project, given a certain database of images (i.e. art from a museum) you can retrieve information of each element of the database with another image taken by you. This technique is called Content Based Image Retrieval (CBIR) and as for now it just uses histograms of the database and the query image to find the right match and provide the relevant information. (Be aware that the algorithm is not perfect and it can fail and retrieve a different image by mistake.)
+With this project, given a certain database of images (i.e. art from a museum) you can retrieve information of each element of the database with another image taken by you. This technique is called Content Based Image Retrieval (CBIR), and our best method uses feature extraction and matching algorithms. It currently relies on masking the image to extract every individual painting, but it should also work with no masked images. Images with no features (plain colors or very blurry images) may fail in retrieving the correct painting from the database.
 
 ## Organization
 In the next section you will find how to install and run the program. Beyond that point, we wil organize the project by weeks, so we will explain what is added each week, give some insight on our decision for some implementations and give some final results we got to evaluate our algorithm.
@@ -250,8 +250,9 @@ Our first task was to implement and evaluate different local feature descriptors
 
 After comparing all configurations, we concluded that the best-performing local descriptors for our project were ORB and AKAZE: ORB (Oriented FAST and Rotated BRIEF) offered excellent speed, making it highly suitable for real-time or large-scale retrieval. AKAZE provided slightly more accurate feature matches in complex regions but was noticeably slower due to its nonlinear scale-space computation. Ultimately, ORB achieved a much better trade-off between performance and processing time, making it our preferred choice for the final retrieval system.
 
-After fine-tuning all parameters and optimizing the image size, our final system achieved: MAP@1: 0.97
+After fine-tuning all parameters and optimizing the image size, our final system achieved: MAP@1: 0.97.
 
+The presentation slides can be found in the [docs folder](./docs) in pdf and pptx format, and also in this [canva link](https://www.canva.com/design/DAG4BnURqVo/HYiTMUn9OxFn19S1V86y8A/view?utm_content=DAG4BnURqVo&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h985ac2ac9b).
 
 ## Team Members
 This is the awesome team who collaborated in this project:
